@@ -27,7 +27,7 @@ Pick the exact window you want — no more cycling through them all.
 ### Homebrew (Recommended)
 
 ```bash
-brew tap ongjin/dockpeek
+brew tap zerry-lab/tap
 brew install --cask dockpeek
 ```
 
