@@ -86,6 +86,8 @@ final class UpdateChecker: ObservableObject {
     // MARK: - Download and Install
 
     private var downloadURL: String?
+    private var downloadSession: URLSession?
+    private var downloadDelegate: DownloadProgressDelegate?
 
     /// Download the latest release ZIP, extract, verify, and replace the running app.
     func downloadAndInstall() {
@@ -94,13 +96,16 @@ final class UpdateChecker: ObservableObject {
 
         upgradeState = .downloading(0)
 
-        let progressDelegate = DownloadProgressDelegate { [weak self] progress in
+        downloadDelegate = DownloadProgressDelegate { [weak self] progress in
             DispatchQueue.main.async { self?.upgradeState = .downloading(progress * 0.5) }
         }
-        let session = URLSession(configuration: .default, delegate: progressDelegate, delegateQueue: nil)
-        session.downloadTask(with: url) { [weak self] tempZip, response, error in
+        downloadSession = URLSession(configuration: .default, delegate: downloadDelegate, delegateQueue: nil)
+        downloadSession!.downloadTask(with: url) { [weak self] tempZip, response, error in
             DispatchQueue.main.async {
                 guard let self else { return }
+                // Clean up session references
+                self.downloadSession = nil
+                self.downloadDelegate = nil
 
                 guard let tempZip, error == nil else {
                     self.upgradeState = .failed(error?.localizedDescription ?? "Download failed")

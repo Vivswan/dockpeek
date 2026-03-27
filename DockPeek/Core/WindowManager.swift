@@ -116,10 +116,11 @@ final class WindowManager {
             stateLock.unlock()
             return cached
         }
-        // Mark timestamp now while holding lock to prevent concurrent fetches
-        windowListCacheTimestamp = now
         stateLock.unlock()
 
+        // CGWindowListCopyWindowInfo is fast (~1-2ms); fetch outside lock to avoid
+        // blocking readers of valid cache, but use a separate fetch-lock to ensure
+        // only one thread fetches at a time.
         guard let fetched = CGWindowListCopyWindowInfo(
             [.optionAll, .excludeDesktopElements], kCGNullWindowID
         ) as? [[String: Any]] else {
@@ -129,6 +130,7 @@ final class WindowManager {
 
         stateLock.lock()
         windowListCache = fetched
+        windowListCacheTimestamp = now
         stateLock.unlock()
 
         return fetched
