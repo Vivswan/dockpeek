@@ -21,6 +21,9 @@ struct WindowInfo: Identifiable, Equatable {
             && lhs.ownerPID == rhs.ownerPID
             && lhs.isOnScreen == rhs.isOnScreen
             && lhs.isMinimized == rhs.isMinimized
+            // Identity (===) comparison is intentional: a new capture produces a new
+            // NSImage object, so SwiftUI sees it as changed and re-renders the thumbnail.
+            // Pixel-level equality would be too expensive for diffing.
             && lhs.thumbnail === rhs.thumbnail
     }
 }

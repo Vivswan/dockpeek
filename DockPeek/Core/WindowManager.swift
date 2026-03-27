@@ -503,8 +503,8 @@ final class WindowManager {
                     AXUIElementCopyAttributeValue(axWindow, kAXSizeAttribute as CFString, &sizeRef)
                     var pos = CGPoint.zero
                     var size = CGSize.zero
-                    if let p = posRef { AXValueGetValue(p as! AXValue, .cgPoint, &pos) }
-                    if let s = sizeRef { AXValueGetValue(s as! AXValue, .cgSize, &size) }
+                    if let p = posRef, let axP = asAXValue(p) { AXValueGetValue(axP, .cgPoint, &pos) }
+                    if let s = sizeRef, let axS = asAXValue(s) { AXValueGetValue(axS, .cgSize, &size) }
                     if abs(tb.origin.x - pos.x) < 5, abs(tb.origin.y - pos.y) < 5,
                        abs(tb.width - size.width) < 5, abs(tb.height - size.height) < 5 {
                         targetAXWindow = axWindow
@@ -576,7 +576,7 @@ final class WindowManager {
         var posRef: AnyObject?
         AXUIElementCopyAttributeValue(axWindow, kAXPositionAttribute as CFString, &posRef)
         var currentPos = CGPoint.zero
-        if let p = posRef { AXValueGetValue(p as! AXValue, .cgPoint, &currentPos) }
+        if let p = posRef, let axP = asAXValue(p) { AXValueGetValue(axP, .cgPoint, &currentPos) }
 
         guard let primaryScreen = NSScreen.screens.first else { return }
         let primaryH = primaryScreen.frame.height

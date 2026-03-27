@@ -146,10 +146,22 @@ enum DiagnosticChecker {
 /// Shared dock rect detection logic used by both AppDelegate and DiagnosticChecker.
 /// Eliminates the duplicated code that previously existed in both locations.
 enum DockRectDetector {
+
+    /// Minimum gap (in points) between screen.frame and screen.visibleFrame
+    /// that indicates the Dock is present on that edge. The Dock's minimum
+    /// height/width is ~48pt; 30pt provides a safe margin that excludes
+    /// the menu bar (~25pt) while catching any visible Dock.
+    private static let minimumDockGap: CGFloat = 30
+
+    /// Width/height of the detection zone along a screen edge when the Dock
+    /// is set to auto-hide. Since there's no visible gap, we create a virtual
+    /// hot zone of this size to detect mouse proximity.
+    private static let autoHideDetectionSize: CGFloat = 100
+
     /// Detect the Dock's screen region in CG coordinates (top-left origin).
     static func detectDockRect(autoHide: Bool, orientation: String) -> CGRect {
-        guard let primary = NSScreen.screens.first else { return .zero }
-        let pH = primary.frame.height
+        let pH = ScreenGeometry.primaryScreenHeight
+        guard pH > 0 else { return .zero }
         var rect = CGRect.zero
         for screen in NSScreen.screens {
             let full = screen.frame
@@ -159,29 +171,28 @@ enum DockRectDetector {
             let rightGap = full.maxX - vis.maxX
 
             var dockZone = CGRect.zero
-            if bottomGap > 30 {
+            if bottomGap > minimumDockGap {
                 let cgTop = pH - vis.minY
                 dockZone = CGRect(x: full.minX, y: cgTop, width: full.width, height: bottomGap)
-            } else if leftGap > 30 {
+            } else if leftGap > minimumDockGap {
                 let cgTop = pH - full.maxY
                 dockZone = CGRect(x: full.minX, y: cgTop, width: leftGap, height: full.height)
-            } else if rightGap > 30 {
+            } else if rightGap > minimumDockGap {
                 let cgTop = pH - full.maxY
                 dockZone = CGRect(x: vis.maxX, y: cgTop, width: rightGap, height: full.height)
             }
 
             // Auto-hide Dock: no visible gap, create detection zone at screen edge
             if dockZone == .zero, autoHide {
-                let dockSize: CGFloat = 100
                 switch orientation {
                 case "left":
                     let cgTop = pH - full.maxY
-                    dockZone = CGRect(x: full.minX, y: cgTop, width: dockSize, height: full.height)
+                    dockZone = CGRect(x: full.minX, y: cgTop, width: autoHideDetectionSize, height: full.height)
                 case "right":
                     let cgTop = pH - full.maxY
-                    dockZone = CGRect(x: full.maxX - dockSize, y: cgTop, width: dockSize, height: full.height)
+                    dockZone = CGRect(x: full.maxX - autoHideDetectionSize, y: cgTop, width: autoHideDetectionSize, height: full.height)
                 default: // "bottom"
-                    dockZone = CGRect(x: full.minX, y: pH - full.minY - dockSize, width: full.width, height: dockSize)
+                    dockZone = CGRect(x: full.minX, y: pH - full.minY - autoHideDetectionSize, width: full.width, height: autoHideDetectionSize)
                 }
             }
 

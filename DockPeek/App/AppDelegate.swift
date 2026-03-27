@@ -4,9 +4,8 @@ import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegate, NSWindowDelegate {
 
-    private var statusItem: NSStatusItem!
-    private var settingsWindow: NSWindow?
-    private var settingsWindowController: SettingsWindowController?
+    // MARK: - Core dependencies
+
     private let appState = AppState()
     private let eventTapManager = EventTapManager()
     private let dockInspector = DockAXInspector()
@@ -14,80 +13,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
     private let previewPanel = PreviewPanel()
     private let highlightOverlay = HighlightOverlay()
 
+    // MARK: - Controllers (created in applicationDidFinishLaunching)
+
+    private var hoverController: HoverPreviewController!
+    private var screenEnforcer: PrimaryScreenEnforcer!
+    private var previewCoordinator: PreviewCoordinator!
+
+    // MARK: - UI state
+
+    private var statusItem: NSStatusItem!
+    private var settingsWindow: NSWindow?
+    private var settingsWindowController: SettingsWindowController?
     private let updateChecker = UpdateChecker.shared
     private var lastClickTime: Date = .distantPast
     private let debounceInterval: TimeInterval = 0.3
     private var accessibilityTimer: Timer?
-    private var axObservers: [pid_t: AXObserver] = [:]
-
-    // Hover preview — adaptive polling timer
-    private var hoverPollTimer: DispatchSourceTimer?
-    private var currentPollInterval: TimeInterval = 0.25
-    private static let idlePollInterval: TimeInterval = 0.25   // 4 Hz
-    private static let activePollInterval: TimeInterval = 0.066 // ~15 Hz
-    fileprivate var cachedDockRect: CGRect = .zero
-    fileprivate var previewIsVisible = false {
-        didSet { windowManager.isPreviewVisible = previewIsVisible }
-    }
-    private var previewGeneration: UInt = 0
+    private var permissionMonitorTimer: Timer?
     private var cmdCommaMonitor: Any?
-    private var hoverTimer: DispatchWorkItem?
-    private var hoverDismissTimer: DispatchWorkItem?
-    private var lastHoveredBundleID: String?
-    private var hoverSettingObserver: AnyCancellable?
-
-    // AX hit-test cache: avoid redundant AX calls for same position within 100ms
-    private var cachedAXHitResult: (point: CGPoint, result: DockApp?, timestamp: Date)?
-    private let axHitCacheTTL: TimeInterval = 0.1
-
-    // Mouse position tracking: skip processing when mouse hasn't moved
-    private var lastPollMouseLocation: CGPoint?
-    private var lastPollInDock = false
-
-    // Cached Dock settings (auto-hide, orientation) — updated in updateCachedDockRect()
-    private var isDockAutoHide = false
-    private var dockOrientation = "bottom"
 
     // MARK: - Lifecycle
 
-    func applicationWillTerminate(_ notification: Notification) {
-        eventTapManager.stop()
-        stopHoverMonitor()
-        hoverSettingObserver?.cancel()
-        hoverSettingObserver = nil
-        permissionMonitorTimer?.invalidate()
-        accessibilityTimer?.invalidate()
-        if let m = cmdCommaMonitor { NSEvent.removeMonitor(m) }
-
-        // Remove notification observers
-        NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
-        NSWorkspace.shared.notificationCenter.removeObserver(self, name: NSWorkspace.didLaunchApplicationNotification, object: nil)
-
-        // Clean up all AX observers
-        for pid in axObservers.keys {
-            removeAXObserver(pid: pid)
-        }
-    }
-
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Create controllers
+        hoverController = HoverPreviewController(
+            appState: appState,
+            dockInspector: dockInspector,
+            windowManager: windowManager,
+            previewPanel: previewPanel,
+            highlightOverlay: highlightOverlay
+        )
+        screenEnforcer = PrimaryScreenEnforcer(appState: appState)
+        previewCoordinator = PreviewCoordinator(
+            appState: appState,
+            windowManager: windowManager,
+            previewPanel: previewPanel,
+            highlightOverlay: highlightOverlay
+        )
+
+        // Wire cross-controller communication
+        hoverController.showPreview = { [weak self] windows, point in
+            self?.previewCoordinator.showPreviewForWindows(windows, at: point)
+        }
+        previewCoordinator.onPreviewVisibilityChanged = { [weak self] visible in
+            self?.hoverController.previewIsVisible = visible
+        }
+
         // Clean up backup from a previous successful update
         UpdateChecker.shared.cleanupPendingBackup()
 
         setupStatusItem()
         setupCmdCommaShortcut()
-        setupNewWindowObserver()
+        screenEnforcer.setupNewWindowObserver()
         setupScreenChangeObserver()
 
         if AccessibilityManager.shared.isAccessibilityGranted {
             startEventTap()
-            if appState.previewOnHover { startHoverMonitor() }
+            if appState.previewOnHover { hoverController.startHoverMonitor() }
             startPermissionMonitor()
         } else {
             showOnboarding()
             startAccessibilityPolling()
         }
 
-        observeHoverSetting()
+        hoverController.observeHoverSetting()
 
         // Auto-check for updates (respects cooldown, interval, and user setting)
         if appState.autoUpdateEnabled && appState.updateCheckInterval != "manual" {
@@ -95,6 +83,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
                 if available { self?.notifyUpdateAvailable() }
             }
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        eventTapManager.stop()
+        hoverController.tearDown()
+        screenEnforcer.tearDown()
+        permissionMonitorTimer?.invalidate()
+        accessibilityTimer?.invalidate()
+        if let m = cmdCommaMonitor { NSEvent.removeMonitor(m) }
+
+        NotificationCenter.default.removeObserver(
+            self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
 
     // MARK: - Status Item
@@ -137,7 +137,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
         NSApp.setActivationPolicy(.regular)
         NSApp.orderFrontStandardAboutPanel(nil)
         NSApp.activate()
-        // Restore accessory mode when about panel closes (check after delay)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.restoreAccessoryPolicyIfNeeded()
         }
@@ -155,8 +154,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
         }
     }
 
-    /// Called when an automatic update check finds a new version.
-    /// Opens the Settings window on the Update tab instead of a modal alert.
     private func notifyUpdateAvailable() {
         openSettings()
     }
@@ -167,7 +164,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
         alert.informativeText = L10n.upToDateMessage
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
-
         NSApp.activate()
         alert.runModal()
     }
@@ -229,13 +225,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
 
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window === settingsWindow else { return }
-        // Delay to allow any other windows to be checked
         DispatchQueue.main.async { [weak self] in
             self?.restoreAccessoryPolicyIfNeeded()
         }
     }
 
-    /// Restore accessory mode only when no app windows are visible.
     private func restoreAccessoryPolicyIfNeeded() {
         let hasVisibleWindow = settingsWindow?.isVisible == true
         if !hasVisibleWindow {
@@ -266,7 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
             guard let self else { timer.invalidate(); return }
             if AccessibilityManager.shared.isAccessibilityGranted {
                 self.startEventTap()
-                if self.appState.previewOnHover { self.startHoverMonitor() }
+                if self.appState.previewOnHover { self.hoverController.startHoverMonitor() }
                 timer.invalidate()
                 self.accessibilityTimer = nil
                 self.startPermissionMonitor()
@@ -282,104 +276,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
         dpLog("Event tap delegate connected")
     }
 
-    // MARK: - Hover Monitor
-
-    /// Observe previewOnHover toggle — start/stop monitor dynamically.
-    /// Uses targeted UserDefaults KVO instead of objectWillChange to avoid
-    /// reacting to every AppState property change.
-    private func observeHoverSetting() {
-        hoverSettingObserver = NotificationCenter.default
-            .publisher(for: UserDefaults.didChangeNotification)
-            .compactMap { [weak self] _ -> Bool? in self?.appState.previewOnHover }
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] enabled in
-                guard let self else { return }
-                if enabled {
-                    if self.hoverPollTimer == nil,
-                       AccessibilityManager.shared.isAccessibilityGranted {
-                        self.startHoverMonitor()
-                    }
-                } else {
-                    self.stopHoverMonitor()
-                }
-            }
-    }
-
-    private func startHoverMonitor() {
-        stopHoverMonitor()
-        updateCachedDockRect()
-
-        currentPollInterval = Self.idlePollInterval
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + currentPollInterval,
-                       repeating: currentPollInterval)
-        timer.setEventHandler { [weak self] in
-            self?.pollMousePosition()
-        }
-        timer.resume()
-        hoverPollTimer = timer
-        dpLog("Hover poll timer started (idle \(Self.idlePollInterval)s)")
-    }
-
-    private func stopHoverMonitor() {
-        hoverPollTimer?.cancel()
-        hoverPollTimer = nil
-        hoverTimer?.cancel()
-        hoverTimer = nil
-        hoverDismissTimer?.cancel()
-        hoverDismissTimer = nil
-        lastHoveredBundleID = nil
-        lastPollMouseLocation = nil
-        lastPollInDock = false
-        cachedAXHitResult = nil
-        previewIsVisible = false
-    }
-
-    /// Lightweight poll: reads NSEvent.mouseLocation and checks dock proximity.
-    /// Adapts timer interval based on whether mouse is near dock or preview is visible.
-    /// Skips processing if mouse position and dock-area state haven't changed.
-    private func pollMousePosition() {
-        let cocoaLoc = NSEvent.mouseLocation
-        let screenH = NSScreen.screens.first?.frame.height ?? 0
-        let cgPoint = CGPoint(x: cocoaLoc.x, y: screenH - cocoaLoc.y)
-
-        let inDock = cachedDockRect.contains(cgPoint)
-        previewIsVisible = previewPanel.isVisible
-        let needsActive = inDock || previewIsVisible
-
-        // Adapt polling interval
-        let desired = needsActive ? Self.activePollInterval : Self.idlePollInterval
-        if abs(currentPollInterval - desired) > 0.001 {
-            currentPollInterval = desired
-            hoverPollTimer?.schedule(deadline: .now() + desired, repeating: desired)
-            dpLog("Poll interval → \(desired)s")
-        }
-
-        // Skip processing if mouse hasn't moved and dock-area status unchanged
-        if let lastLoc = lastPollMouseLocation,
-           lastLoc.x == cgPoint.x, lastLoc.y == cgPoint.y,
-           lastPollInDock == inDock {
-            return
-        }
-        lastPollMouseLocation = cgPoint
-        lastPollInDock = inDock
-
-        // Only process when near dock or preview is visible
-        if needsActive {
-            processHoverEvent(cgPoint: cgPoint)
-        }
-    }
-
-    fileprivate func updateCachedDockRect() {
-        // Read Dock settings
-        let dockDefaults = UserDefaults(suiteName: "com.apple.dock")
-        isDockAutoHide = dockDefaults?.bool(forKey: "autohide") ?? false
-        dockOrientation = dockDefaults?.string(forKey: "orientation") ?? "bottom"
-
-        cachedDockRect = DockRectDetector.detectDockRect(autoHide: isDockAutoHide, orientation: dockOrientation)
-        dpLog("Cached dock rect (CG): \(cachedDockRect) autoHide=\(isDockAutoHide) orientation=\(dockOrientation)")
-    }
+    // MARK: - Screen Change Observer
 
     private func setupScreenChangeObserver() {
         NotificationCenter.default.addObserver(
@@ -389,129 +286,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
     }
 
     @objc private func screenDidChange() {
-        updateCachedDockRect()
-    }
-
-    /// Called from the poll timer when mouse is near the dock or preview panel.
-    /// Accepts pre-computed cgPoint to avoid redundant coordinate conversion.
-    fileprivate func processHoverEvent(cgPoint: CGPoint) {
-        guard appState.previewOnHover else { return }
-
-        // Convert CG point back to Cocoa for panel frame check
-        let screenH = NSScreen.screens.first?.frame.height ?? 0
-        let cocoaLoc = NSPoint(x: cgPoint.x, y: screenH - cgPoint.y)
-
-        // If mouse is over the preview panel, cancel any pending dismiss and let user interact
-        if previewPanel.isVisible, previewPanel.frame.contains(cocoaLoc) {
-            hoverDismissTimer?.cancel()
-            hoverDismissTimer = nil
-            return
-        }
-
-        let inDock = isPointInDockArea(cgPoint)
-        let dockApp = inDock ? cachedAppAtPoint(cgPoint) : nil
-
-        // Mouse is outside both dock and preview panel
-        if !inDock || dockApp == nil {
-            hoverTimer?.cancel()
-            hoverTimer = nil
-            if previewPanel.isVisible {
-                // Delayed dismiss — gives time to cross the gap to the preview panel
-                if hoverDismissTimer == nil {
-                    let task = DispatchWorkItem { [weak self] in
-                        guard let self else { return }
-                        // Re-check: mouse may have reached the preview panel
-                        let currentLoc = NSEvent.mouseLocation
-                        if self.previewPanel.isVisible, self.previewPanel.frame.contains(currentLoc) {
-                            self.hoverDismissTimer = nil
-                            return
-                        }
-                        self.lastHoveredBundleID = nil
-                        self.hoverDismissTimer = nil
-                        self.previewIsVisible = false
-                        self.highlightOverlay.hide()
-                        self.previewPanel.dismissPanel()
-                    }
-                    hoverDismissTimer = task
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: task)
-                }
-            } else {
-                lastHoveredBundleID = nil
-            }
-            return
-        }
-
-        // Mouse is in dock on an app — cancel any pending dismiss
-        hoverDismissTimer?.cancel()
-        hoverDismissTimer = nil
-
-        guard let dockApp else { return }
-
-        let bundleID = dockApp.bundleIdentifier ?? dockApp.name
-
-        // Same app — keep existing timer/preview
-        if bundleID == lastHoveredBundleID { return }
-
-        // Different app — cancel old timer and dismiss current preview
-        hoverTimer?.cancel()
-        let wasVisible = previewPanel.isVisible
-        if wasVisible {
-            highlightOverlay.hide()
-            previewPanel.dismissPanel(animated: false)
-        }
-        lastHoveredBundleID = bundleID
-
-        guard dockApp.isRunning, let pid = dockApp.pid else {
-            hoverTimer = nil
-            return
-        }
-
-        if appState.isExcluded(bundleID: dockApp.bundleIdentifier) {
-            hoverTimer = nil
-            return
-        }
-
-        // Instant switch when already browsing, normal delay for first hover
-        if wasVisible {
-            handleHoverPreview(for: pid, at: cgPoint)
-        } else {
-            let task = DispatchWorkItem { [weak self] in
-                self?.handleHoverPreview(for: pid, at: cgPoint)
-            }
-            hoverTimer = task
-            DispatchQueue.main.asyncAfter(deadline: .now() + appState.hoverDelay, execute: task)
-        }
-    }
-
-    /// Cached AX hit-test: returns cached result if same position within 100ms TTL
-    private func cachedAppAtPoint(_ point: CGPoint) -> DockApp? {
-        let now = Date()
-        if let cached = cachedAXHitResult,
-           cached.point.x == point.x, cached.point.y == point.y,
-           now.timeIntervalSince(cached.timestamp) < axHitCacheTTL {
-            return cached.result
-        }
-        let result = dockInspector.appAtPoint(point)
-        cachedAXHitResult = (point: point, result: result, timestamp: now)
-        return result
-    }
-
-    private func handleHoverPreview(for pid: pid_t, at point: CGPoint) {
-        guard appState.previewOnHover else { return }
-
-        let windows = windowManager.windowsForApp(pid: pid)
-        guard !windows.isEmpty else { return }
-
-        dpLog("Hover preview: \(windows.count) window(s) for PID \(pid)")
-        showPreviewForWindows(windows, at: point)
+        hoverController.updateCachedDockRect()
     }
 
     // MARK: - Permission Monitor
 
-    private var permissionMonitorTimer: Timer?
-
-    /// Periodically checks if accessibility permission is still granted.
-    /// If revoked, stops the event tap immediately to prevent system-wide input freeze.
     private func startPermissionMonitor() {
         permissionMonitorTimer?.invalidate()
         permissionMonitorTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) {
@@ -520,10 +299,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
             if !AccessibilityManager.shared.isAccessibilityGranted {
                 dpLog("Permission revoked — stopping event tap")
                 self.eventTapManager.stop()
-                self.stopHoverMonitor()
+                self.hoverController.stopHoverMonitor()
                 timer.invalidate()
                 self.permissionMonitorTimer = nil
-                // Resume polling so we can restart when permission is re-granted
                 self.startAccessibilityPolling()
             }
         }
@@ -534,96 +312,80 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
     func eventTapManager(_ manager: EventTapManager, didDetectClickAt point: CGPoint) -> Bool {
         guard appState.isEnabled else { return false }
 
-        // Cancel any pending hover timer on click
-        hoverTimer?.cancel()
-        hoverTimer = nil
+        // Cancel any pending hover/dismiss timers on click
+        hoverController.cancelHoverTimers()
 
-        // Cancel any pending dismiss timer
-        hoverDismissTimer?.cancel()
-        hoverDismissTimer = nil
-
-        // If preview is visible, handle click without debounce
+        // If preview is visible, handle click
         if previewPanel.isVisible {
-            let panelFrame = previewPanel.frame
-            let screenH = NSScreen.screens.first?.frame.height ?? 0
-            // Convert CG point (top-left origin) to Cocoa (bottom-left origin)
-            // Must use primary screen height — CG origin is at top-left of primary screen
-            let cocoaPoint = NSPoint(x: point.x, y: screenH - point.y)
-            if panelFrame.contains(cocoaPoint) {
-                // Click is on the preview panel — let it through to SwiftUI.
-                // Keep lastHoveredBundleID so the hover poll doesn't re-show
-                // a preview after the onSelect handler activates a window.
+            let cocoaPoint = ScreenGeometry.cgToCocoa(point)
+            if previewPanel.frame.contains(cocoaPoint) {
+                // Click is on the preview panel — let it through to SwiftUI
                 return false
             }
 
             // Click is on a Dock icon — check what app it is
-            if isPointInDockArea(point), let dockApp = dockInspector.appAtPoint(point),
+            if hoverController.isPointInDockArea(point),
+               let dockApp = dockInspector.appAtPoint(point),
                dockApp.isRunning, let pid = dockApp.pid,
                !appState.isExcluded(bundleID: dockApp.bundleIdentifier) {
                 let windows = windowManager.windowsForApp(pid: pid)
                 if windows.count >= 2 {
-                    // 2+ windows: suppress click, keep preview (or switch to this app's preview)
                     let bundleID = dockApp.bundleIdentifier ?? dockApp.name
-                    if bundleID != lastHoveredBundleID {
+                    if bundleID != hoverController.lastHoveredBundleID {
                         // Clicked a different app — switch preview
                         highlightOverlay.hide()
                         previewPanel.dismissPanel(animated: false)
-                        lastHoveredBundleID = bundleID
+                        hoverController.lastHoveredBundleID = bundleID
                         DispatchQueue.main.async { [weak self] in
-                            self?.showPreviewForWindows(windows, at: point)
+                            self?.previewCoordinator.showPreviewForWindows(windows, at: point)
                         }
                     }
-                    // Same app — just keep existing preview
                     return true
                 } else {
-                    // 1 window: dismiss preview, let click through to activate app
+                    // 1 window: dismiss preview, let click through
                     highlightOverlay.hide()
                     previewPanel.dismissPanel(animated: false)
-                    previewIsVisible = false
-                    // Keep bundle ID so hover poll doesn't re-trigger for this app
-                    lastHoveredBundleID = dockApp.bundleIdentifier ?? dockApp.name
+                    hoverController.previewIsVisible = false
+                    hoverController.lastHoveredBundleID = dockApp.bundleIdentifier ?? dockApp.name
                     return false
                 }
             }
 
-            // Click is outside dock — dismiss and SUPPRESS
+            // Click is outside dock — dismiss and suppress
             highlightOverlay.hide()
             previewPanel.dismissPanel(animated: false)
-            lastHoveredBundleID = nil
+            hoverController.lastHoveredBundleID = nil
             return true
         }
 
         // No preview visible — clear hover state
-        lastHoveredBundleID = nil
+        hoverController.lastHoveredBundleID = nil
 
-        // Debounce (only for new preview triggers, not panel interactions)
+        // Debounce (only for new preview triggers)
         let now = Date()
         guard now.timeIntervalSince(lastClickTime) > debounceInterval else { return false }
         lastClickTime = now
 
         // Fast geometric check: skip AX calls if click is outside Dock area
-        guard isPointInDockArea(point) else { return false }
+        guard hoverController.isPointInDockArea(point) else { return false }
 
-        // Hit-test the Dock (AX call — only runs for Dock area clicks)
+        // Hit-test the Dock
         guard let dockApp = dockInspector.appAtPoint(point) else { return false }
 
-        // App not running → Dock will launch it. Warp cursor to primary
-        // BEFORE the click reaches Dock so macOS natively places the window there.
+        // App not running → Dock will launch it. Warp cursor to primary.
         guard dockApp.isRunning, let pid = dockApp.pid else {
             if appState.forceNewWindowsToPrimary {
-                warpCursorToPrimaryBriefly()
+                screenEnforcer.warpCursorToPrimaryBriefly()
             }
             return false
         }
         if appState.isExcluded(bundleID: dockApp.bundleIdentifier) { return false }
 
-        // Count windows (fast — no thumbnails yet)
         let windows = windowManager.windowsForApp(pid: pid)
 
-        // Running app with < 2 windows: Dock click will create/activate a window.
-        // Warp cursor so the new window appears on primary.
+        // Running app with < 2 windows: warp cursor for primary placement
         if windows.count < 2, appState.forceNewWindowsToPrimary {
-            warpCursorToPrimaryBriefly()
+            screenEnforcer.warpCursorToPrimaryBriefly()
             return false
         }
 
@@ -632,277 +394,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
         // Suppress click and show preview asynchronously
         dpLog("Will show preview for \(dockApp.name) (\(windows.count) windows)")
         DispatchQueue.main.async { [weak self] in
-            self?.showPreviewForWindows(windows, at: point)
+            self?.previewCoordinator.showPreviewForWindows(windows, at: point)
         }
         return true
-    }
-
-    // MARK: - Cursor Warp (Primary Screen Enforcement)
-
-    private var cursorRestoreTask: DispatchWorkItem?
-
-    /// Warp cursor to primary screen center so macOS places the new window there.
-    /// Called BEFORE the click reaches the Dock — the window is created natively on primary.
-    /// Cursor is restored after the app window appears.
-    private func warpCursorToPrimaryBriefly() {
-        guard let primary = NSScreen.screens.first else { return }
-        let pH = primary.frame.height
-
-        // Save current position (Cocoa → CG)
-        let savedCocoa = NSEvent.mouseLocation
-        let savedCG = CGPoint(x: savedCocoa.x, y: pH - savedCocoa.y)
-        let primaryCenter = CGPoint(x: primary.frame.midX, y: pH / 2)
-
-        // Already on primary? Skip.
-        let primaryCG = CGRect(x: primary.frame.minX, y: pH - primary.frame.maxY,
-                               width: primary.frame.width, height: primary.frame.height)
-        if primaryCG.contains(savedCG) { return }
-
-        dpLog("Warping cursor to primary center for window placement")
-
-        // 1. Warp cursor position
-        CGWarpMouseCursorPosition(primaryCenter)
-
-        // 2. Post synthetic mouse-move event so macOS fully registers the new position.
-        //    CGWarpMouseCursorPosition alone may not update all internal tracking.
-        if let moveEvent = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved,
-                                   mouseCursorPosition: primaryCenter, mouseButton: .left) {
-            moveEvent.post(tap: .cghidEventTap)
-        }
-
-        // Restore cursor after window has been placed
-        cursorRestoreTask?.cancel()
-        let task = DispatchWorkItem {
-            CGWarpMouseCursorPosition(savedCG)
-            if let restoreEvent = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved,
-                                          mouseCursorPosition: savedCG, mouseButton: .left) {
-                restoreEvent.post(tap: .cghidEventTap)
-            }
-        }
-        cursorRestoreTask = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: task)
-    }
-
-    // MARK: - Dock Area Detection
-
-    /// Fast geometric check — is the click point in the Dock region?
-    /// Uses the cached dock rect (CG coordinates, top-left origin).
-    private func isPointInDockArea(_ point: CGPoint) -> Bool {
-        // Refresh cache if needed (e.g. Dock moved since last check)
-        if cachedDockRect == .zero { updateCachedDockRect() }
-        return cachedDockRect.contains(point)
-    }
-
-    // MARK: - Preview
-
-    // MARK: - New Window → Primary Screen
-
-    private func setupNewWindowObserver() {
-        NSWorkspace.shared.notificationCenter.addObserver(
-            self, selector: #selector(appDidLaunch(_:)),
-            name: NSWorkspace.didLaunchApplicationNotification, object: nil
-        )
-    }
-
-    @objc private func appDidLaunch(_ note: Notification) {
-        guard appState.forceNewWindowsToPrimary else { return }
-        guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-        let pid = app.processIdentifier
-        if app.bundleIdentifier == Bundle.main.bundleIdentifier { return }
-
-        dpLog("appDidLaunch: \(app.localizedName ?? "?") pid=\(pid)")
-
-        // Backup: AXObserver for apps launched via Spotlight/Launchpad (not through Dock click).
-        // The primary strategy (cursor warp in event tap) handles Dock launches.
-        let callback: AXObserverCallback = { _, element, _, _ in
-            // Try element as window first, fall back to focused window
-            var axWin: AXUIElement = element
-            var posRef: AnyObject?
-            if AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posRef) != .success {
-                var focusedRef: AnyObject?
-                AXUIElementCopyAttributeValue(element, kAXFocusedWindowAttribute as CFString, &focusedRef)
-                guard let focused = focusedRef else { return }
-                // AXUIElement is a CF type; cast always succeeds for non-nil AnyObject
-                let axFocused = focused as! AXUIElement // swiftlint:disable:this force_cast
-                axWin = axFocused
-            }
-            moveAXWindowToPrimaryIfNeeded(axWin)
-        }
-
-        // Clean up existing observer for this PID if any
-        removeAXObserver(pid: pid)
-
-        var observer: AXObserver?
-        guard AXObserverCreate(pid, callback, &observer) == .success,
-              let observer else { return }
-
-        let axApp = AXUIElementCreateApplication(pid)
-        AXObserverAddNotification(observer, axApp, kAXWindowCreatedNotification as CFString, nil)
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
-        axObservers[pid] = observer
-
-        // Also observe app termination to clean up immediately.
-        // Use a class-based box to avoid a retain cycle between the closure
-        // and the local variable that holds the notification token.
-        class TokenBox { var token: NSObjectProtocol? }
-        let tokenBox = TokenBox()
-        tokenBox.token = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didTerminateApplicationNotification,
-            object: nil, queue: .main
-        ) { [weak self, weak tokenBox] note in
-            guard let terminated = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  terminated.processIdentifier == pid else { return }
-            self?.removeAXObserver(pid: pid)
-            if let token = tokenBox?.token {
-                NSWorkspace.shared.notificationCenter.removeObserver(token)
-                tokenBox?.token = nil
-            }
-        }
-
-        // Exponential backoff polling: 5 checks covering ~2s window
-        // AXObserver alone is unreliable — this catches windows the observer misses
-        let axAppRef = axApp
-        let backoffDelays: [Double] = [0.1, 0.3, 0.7, 1.2, 2.0]
-        for delay in backoffDelays {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard self?.appState.forceNewWindowsToPrimary == true else { return }
-                self?.moveAppWindowToPrimaryIfNeeded(axApp: axAppRef)
-            }
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self, weak tokenBox] in
-            self?.removeAXObserver(pid: pid)
-            if let token = tokenBox?.token {
-                NSWorkspace.shared.notificationCenter.removeObserver(token)
-                tokenBox?.token = nil
-            }
-        }
-    }
-
-    /// Move the focused window of an app to primary screen if it's not already there.
-    private func moveAppWindowToPrimaryIfNeeded(axApp: AXUIElement) {
-        var focusedRef: AnyObject?
-        AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &focusedRef)
-        guard let focusedVal = focusedRef else { return }
-        // AXUIElement is a CF type; cast always succeeds for non-nil AnyObject
-        let win = focusedVal as! AXUIElement // swiftlint:disable:this force_cast
-        moveAXWindowToPrimaryIfNeeded(win)
-    }
-
-    private func removeAXObserver(pid: pid_t) {
-        guard let observer = axObservers.removeValue(forKey: pid) else { return }
-        CFRunLoopRemoveSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
-    }
-
-    // MARK: - Preview
-
-    private func showPreviewForWindows(_ windows: [WindowInfo], at point: CGPoint) {
-        previewIsVisible = true
-        previewGeneration &+= 1
-        let generation = previewGeneration
-        let thumbSize = CGFloat(appState.thumbnailSize)
-
-        // Invalidate only this app's thumbnails so they get fresh captures
-        let allIDs = windows.map { $0.id }
-        windowManager.invalidateThumbnails(for: allIDs)
-
-        // All will be cache misses now, show panel immediately with placeholders
-        var enriched = windows
-
-        // Capture fresh thumbnails, then update the panel
-        windowManager.captureThumbnails(for: allIDs, maxSize: thumbSize) { [weak self] results in
-            guard let self, self.previewIsVisible, self.previewGeneration == generation else { return }
-            for i in enriched.indices {
-                if let img = results[enriched[i].id] {
-                    enriched[i].thumbnail = img
-                }
-            }
-            self.previewPanel.updateThumbnails(enriched)
-        }
-
-        previewPanel.showPreview(
-            windows: enriched,
-            thumbnailSize: thumbSize,
-            showTitles: appState.showWindowTitles,
-            showSnapButtons: appState.showSnapButtons,
-            showCloseButton: appState.showCloseButton,
-            near: point,
-            onSelect: { [weak self] win in
-                self?.highlightOverlay.hide()
-                self?.previewPanel.dismissPanel(animated: false)
-                self?.previewIsVisible = false
-                self?.windowManager.activateWindow(windowID: win.id, pid: win.ownerPID)
-            },
-            onClose: { [weak self] win in
-                self?.highlightOverlay.hide()
-                self?.windowManager.closeWindow(windowID: win.id, pid: win.ownerPID)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    guard let self else { return }
-                    let remaining = self.windowManager.windowsForApp(pid: win.ownerPID)
-                    if remaining.count < 2 {
-                        self.previewPanel.dismissPanel()
-                    } else {
-                        self.showPreviewForWindows(remaining, at: point)
-                    }
-                }
-            },
-            onSnap: { [weak self] win, position in
-                self?.highlightOverlay.hide()
-                self?.previewPanel.dismissPanel(animated: false)
-                self?.windowManager.snapWindow(windowID: win.id, pid: win.ownerPID, position: position)
-            },
-            onDismiss: { [weak self] in
-                self?.highlightOverlay.hide()
-                self?.previewPanel.dismissPanel()
-            },
-            onHoverWindow: { [weak self] (win: WindowInfo?) in
-                guard let self, self.appState.livePreviewOnHover else { return }
-                if let win {
-                    self.highlightOverlay.show(for: win)
-                    let hoveredID = win.id
-                    self.windowManager.captureOverlayImage(for: win.id, bounds: win.bounds) { [weak self] image in
-                        guard let self, let image else { return }
-                        // Only update if still hovering the same window
-                        guard self.highlightOverlay.currentID == hoveredID else { return }
-                        self.highlightOverlay.updateImage(image)
-                    }
-                } else {
-                    self.highlightOverlay.hide()
-                }
-            }
-        )
-    }
-}
-
-// MARK: - Primary Screen Move Helper
-
-/// Move an AX window to the center of the primary screen if it's not already there.
-/// Free function so it can be called from both the AXObserverCallback (C function)
-/// and from AppDelegate instance methods.
-private func moveAXWindowToPrimaryIfNeeded(_ axWindow: AXUIElement) {
-    guard let primary = NSScreen.screens.first else { return }
-    let pH = primary.frame.height
-    let vis = primary.visibleFrame
-    let primaryCG = CGRect(x: primary.frame.minX, y: pH - primary.frame.maxY,
-                           width: primary.frame.width, height: primary.frame.height)
-
-    var posRef: AnyObject?
-    AXUIElementCopyAttributeValue(axWindow, kAXPositionAttribute as CFString, &posRef)
-    var pos = CGPoint.zero
-    if let p = posRef { AXValueGetValue(p as! AXValue, .cgPoint, &pos) }
-    guard !primaryCG.contains(pos) else { return }
-
-    var sizeRef: AnyObject?
-    AXUIElementCopyAttributeValue(axWindow, kAXSizeAttribute as CFString, &sizeRef)
-    var sz = CGSize(width: 800, height: 600)
-    if let s = sizeRef { AXValueGetValue(s as! AXValue, .cgSize, &sz) }
-
-    var newPos = CGPoint(
-        x: vis.minX + (vis.width - sz.width) / 2,
-        y: (pH - vis.maxY) + (vis.height - sz.height) / 2
-    )
-    if let axPos = AXValueCreate(.cgPoint, &newPos) {
-        AXUIElementSetAttributeValue(axWindow, kAXPositionAttribute as CFString, axPos)
-        dpLog("Moved window to primary screen center")
     }
 }
