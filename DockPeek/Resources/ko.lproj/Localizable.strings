@@ -21,6 +21,8 @@
 "livePreviewOnHover" = "마우스 호버 시 실시간 미리보기";
 "forceNewWindowsToPrimary" = "새 창을 메인 디스플레이에 표시";
 "showWindowTitles" = "창 제목 표시";
+"showSnapButtons" = "스냅 버튼 표시";
+"showCloseButton" = "닫기 버튼 표시";
 "thumbnailSize" = "미리보기 크기";
 
 /* Permissions */

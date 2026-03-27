@@ -116,6 +116,8 @@ final class WindowManager {
             stateLock.unlock()
             return cached
         }
+        // Mark timestamp now while holding lock to prevent concurrent fetches
+        windowListCacheTimestamp = now
         stateLock.unlock()
 
         guard let fetched = CGWindowListCopyWindowInfo(
@@ -127,7 +129,6 @@ final class WindowManager {
 
         stateLock.lock()
         windowListCache = fetched
-        windowListCacheTimestamp = now
         stateLock.unlock()
 
         return fetched
@@ -386,42 +387,38 @@ final class WindowManager {
         bounds: CGRect,
         completion: @escaping (NSImage?) -> Void
     ) {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        Task.detached { [weak self] in
             guard let self else {
-                DispatchQueue.main.async { completion(nil) }
+                await MainActor.run { completion(nil) }
                 return
             }
 
-            let semaphore = DispatchSemaphore(value: 0)
-            var result: NSImage?
-
-            Task {
-                defer { semaphore.signal() }
-                do {
-                    try await self.refreshSCWindowsIfNeeded()
-                    guard let scWindow = self.resolveWindows([windowID]).first?.1 else { return }
-
-                    let filter = SCContentFilter(desktopIndependentWindow: scWindow)
-                    let config = SCStreamConfiguration()
-                    config.showsCursor = false
-                    config.captureResolution = .best
-                    // Request pixels matching the overlay size at 2× for Retina
-                    config.width  = max(1, Int(bounds.width * 2))
-                    config.height = max(1, Int(bounds.height * 2))
-
-                    let cgImage = try await SCScreenshotManager.captureImage(
-                        contentFilter: filter, configuration: config
-                    )
-
-                    // Size to match CG bounds so it fills the overlay exactly
-                    result = NSImage(cgImage: cgImage, size: NSSize(width: bounds.width, height: bounds.height))
-                } catch {
-                    dpLog("Overlay capture failed for window \(windowID): \(error)")
+            do {
+                try await self.refreshSCWindowsIfNeeded()
+                guard let scWindow = self.resolveWindows([windowID]).first?.1 else {
+                    await MainActor.run { completion(nil) }
+                    return
                 }
-            }
 
-            semaphore.wait()
-            DispatchQueue.main.async { completion(result) }
+                let filter = SCContentFilter(desktopIndependentWindow: scWindow)
+                let config = SCStreamConfiguration()
+                config.showsCursor = false
+                config.captureResolution = .best
+                // Request pixels matching the overlay size at 2× for Retina
+                config.width  = max(1, Int(bounds.width * 2))
+                config.height = max(1, Int(bounds.height * 2))
+
+                let cgImage = try await SCScreenshotManager.captureImage(
+                    contentFilter: filter, configuration: config
+                )
+
+                // Size to match CG bounds so it fills the overlay exactly
+                let image = NSImage(cgImage: cgImage, size: NSSize(width: bounds.width, height: bounds.height))
+                await MainActor.run { completion(image) }
+            } catch {
+                dpLog("Overlay capture failed for window \(windowID): \(error)")
+                await MainActor.run { completion(nil) }
+            }
         }
     }
 

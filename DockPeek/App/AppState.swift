@@ -16,6 +16,8 @@ final class AppState: ObservableObject {
     @AppStorage("appLanguage") var language: String = "en"
     @AppStorage("autoUpdateEnabled") var autoUpdateEnabled = true
     @AppStorage("updateCheckInterval") var updateCheckInterval = "daily" // "daily", "weekly", "manual"
+    @AppStorage("showSnapButtons") var showSnapButtons = true
+    @AppStorage("showCloseButton") var showCloseButton = true
 
     private lazy var cachedExcludedBundleIDs: Set<String> = Self.parseExcludedIDs(excludedBundleIDsRaw)
 

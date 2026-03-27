@@ -4,6 +4,8 @@ struct PreviewContentView: View {
     @ObservedObject var windowsModel: PreviewWindowsModel
     let thumbnailSize: CGFloat
     let showTitles: Bool
+    let showSnapButtons: Bool
+    let showCloseButton: Bool
     let onSelect: (WindowInfo) -> Void
     let onClose: (WindowInfo) -> Void
     let onSnap: (WindowInfo, SnapPosition) -> Void
@@ -66,7 +68,7 @@ struct PreviewContentView: View {
                         )
                 )
                 .overlay(alignment: .topLeading) {
-                    if highlighted {
+                    if highlighted && showCloseButton {
                         let closeHovered = closeHoveredID == w.id
                         Button {
                             onClose(w)
@@ -91,7 +93,7 @@ struct PreviewContentView: View {
                     }
                 }
                 .overlay(alignment: .bottom) {
-                    if highlighted {
+                    if highlighted && showSnapButtons {
                         HStack(spacing: 6) {
                             snapButton(icon: "rectangle.lefthalf.filled", position: .left, window: w)
                             snapButton(icon: "rectangle.inset.filled", position: .fill, window: w)

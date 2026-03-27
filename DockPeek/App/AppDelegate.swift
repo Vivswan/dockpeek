@@ -70,6 +70,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Clean up backup from a previous successful update
+        UpdateChecker.shared.cleanupPendingBackup()
+
         setupStatusItem()
         setupCmdCommaShortcut()
         setupNewWindowObserver()
@@ -369,54 +372,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
     }
 
     fileprivate func updateCachedDockRect() {
-        guard let primary = NSScreen.screens.first else { cachedDockRect = .zero; return }
-        let pH = primary.frame.height
-
         // Read Dock settings
         let dockDefaults = UserDefaults(suiteName: "com.apple.dock")
         isDockAutoHide = dockDefaults?.bool(forKey: "autohide") ?? false
         dockOrientation = dockDefaults?.string(forKey: "orientation") ?? "bottom"
 
-        var rect = CGRect.zero
-        for screen in NSScreen.screens {
-            let full = screen.frame
-            let vis = screen.visibleFrame
-            let bottomGap = vis.minY - full.minY
-            let leftGap = vis.minX - full.minX
-            let rightGap = full.maxX - vis.maxX
-
-            var dockZone = CGRect.zero
-            if bottomGap > 30 {
-                let cgTop = pH - vis.minY
-                dockZone = CGRect(x: full.minX, y: cgTop, width: full.width, height: bottomGap)
-            } else if leftGap > 30 {
-                let cgTop = pH - full.maxY
-                dockZone = CGRect(x: full.minX, y: cgTop, width: leftGap, height: full.height)
-            } else if rightGap > 30 {
-                let cgTop = pH - full.maxY
-                dockZone = CGRect(x: vis.maxX, y: cgTop, width: rightGap, height: full.height)
-            }
-
-            // Auto-hide Dock: no visible gap, create detection zone at screen edge
-            if dockZone == .zero, isDockAutoHide {
-                let dockSize: CGFloat = 100
-                switch dockOrientation {
-                case "left":
-                    let cgTop = pH - full.maxY
-                    dockZone = CGRect(x: full.minX, y: cgTop, width: dockSize, height: full.height)
-                case "right":
-                    let cgTop = pH - full.maxY
-                    dockZone = CGRect(x: full.maxX - dockSize, y: cgTop, width: dockSize, height: full.height)
-                default: // "bottom"
-                    dockZone = CGRect(x: full.minX, y: pH - full.minY - dockSize, width: full.width, height: dockSize)
-                }
-            }
-
-            if dockZone != .zero {
-                rect = rect == .zero ? dockZone : rect.union(dockZone)
-            }
-        }
-        cachedDockRect = rect
+        cachedDockRect = DockRectDetector.detectDockRect(autoHide: isDockAutoHide, orientation: dockOrientation)
         dpLog("Cached dock rect (CG): \(cachedDockRect) autoHide=\(isDockAutoHide) orientation=\(dockOrientation)")
     }
 
@@ -725,42 +686,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
     // MARK: - Dock Area Detection
 
     /// Fast geometric check — is the click point in the Dock region?
-    /// Uses the gap between screen.frame and screen.visibleFrame.
+    /// Uses the cached dock rect (CG coordinates, top-left origin).
     private func isPointInDockArea(_ point: CGPoint) -> Bool {
-        let primaryH = NSScreen.screens.first?.frame.height ?? 0
-        for screen in NSScreen.screens {
-            let full = screen.frame
-            let vis = screen.visibleFrame
-            // Convert CG (top-left) to Cocoa (bottom-left)
-            // Must use primary screen height — CG origin is at top-left of primary screen
-            let cocoaY = primaryH - point.y
-
-            // Check if the point is on this screen
-            let cocoaPoint = NSPoint(x: point.x, y: cocoaY)
-            guard full.contains(cocoaPoint) else { continue }
-
-            let bottomGap = vis.minY - full.minY
-            let leftGap = vis.minX - full.minX
-            let rightGap = full.maxX - vis.maxX
-
-            if bottomGap > 30, cocoaY < vis.minY { return true }
-            if leftGap > 30, point.x < vis.minX { return true }
-            if rightGap > 30, point.x > vis.maxX { return true }
-
-            // Auto-hide Dock: check if point is near screen edge
-            if isDockAutoHide {
-                let dockSize: CGFloat = 100
-                switch dockOrientation {
-                case "left":
-                    if point.x < full.minX + dockSize { return true }
-                case "right":
-                    if point.x > full.maxX - dockSize { return true }
-                default: // "bottom"
-                    if cocoaY < full.minY + dockSize { return true }
-                }
-            }
-        }
-        return false
+        // Refresh cache if needed (e.g. Dock moved since last check)
+        if cachedDockRect == .zero { updateCachedDockRect() }
+        return cachedDockRect.contains(point)
     }
 
     // MARK: - Preview
@@ -792,7 +722,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
                 var focusedRef: AnyObject?
                 AXUIElementCopyAttributeValue(element, kAXFocusedWindowAttribute as CFString, &focusedRef)
                 guard let focused = focusedRef else { return }
-                let axFocused = focused as! AXUIElement
+                // AXUIElement is a CF type; cast always succeeds for non-nil AnyObject
+                let axFocused = focused as! AXUIElement // swiftlint:disable:this force_cast
                 axWin = axFocused
             }
             moveAXWindowToPrimaryIfNeeded(axWin)
@@ -853,7 +784,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
         var focusedRef: AnyObject?
         AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &focusedRef)
         guard let focusedVal = focusedRef else { return }
-        let win = focusedVal as! AXUIElement
+        // AXUIElement is a CF type; cast always succeeds for non-nil AnyObject
+        let win = focusedVal as! AXUIElement // swiftlint:disable:this force_cast
         moveAXWindowToPrimaryIfNeeded(win)
     }
 
@@ -892,6 +824,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
             windows: enriched,
             thumbnailSize: thumbSize,
             showTitles: appState.showWindowTitles,
+            showSnapButtons: appState.showSnapButtons,
+            showCloseButton: appState.showCloseButton,
             near: point,
             onSelect: { [weak self] win in
                 self?.highlightOverlay.hide()

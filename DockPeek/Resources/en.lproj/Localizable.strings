@@ -21,6 +21,8 @@
 "livePreviewOnHover" = "Live preview on hover";
 "forceNewWindowsToPrimary" = "Force new windows to primary display";
 "showWindowTitles" = "Show window titles";
+"showSnapButtons" = "Show snap buttons";
+"showCloseButton" = "Show close button";
 "thumbnailSize" = "Thumbnail size";
 
 /* Permissions */

@@ -94,7 +94,11 @@ final class UpdateChecker: ObservableObject {
 
         upgradeState = .downloading(0)
 
-        URLSession.shared.downloadTask(with: url) { [weak self] tempZip, response, error in
+        let progressDelegate = DownloadProgressDelegate { [weak self] progress in
+            DispatchQueue.main.async { self?.upgradeState = .downloading(progress * 0.5) }
+        }
+        let session = URLSession(configuration: .default, delegate: progressDelegate, delegateQueue: nil)
+        session.downloadTask(with: url) { [weak self] tempZip, response, error in
             DispatchQueue.main.async {
                 guard let self else { return }
 
@@ -169,7 +173,10 @@ final class UpdateChecker: ObservableObject {
                 return
             }
 
-            if hasBackup { try? fm.removeItem(at: backupDir) }
+            // Keep backup until relaunch — store path for cleanup on next launch
+            if hasBackup {
+                UserDefaults.standard.set(backupDir.path, forKey: "pendingUpdateBackup")
+            }
             try? fm.removeItem(at: tempDir)
 
             upgradeState = .completed
@@ -271,6 +278,16 @@ final class UpdateChecker: ObservableObject {
         upgradeState = .idle
     }
 
+    /// Clean up backup from a previous successful update.
+    /// Call this on app launch — if we're running, the update succeeded.
+    func cleanupPendingBackup() {
+        guard let backupPath = UserDefaults.standard.string(forKey: "pendingUpdateBackup") else { return }
+        UserDefaults.standard.removeObject(forKey: "pendingUpdateBackup")
+        let url = URL(fileURLWithPath: backupPath)
+        try? FileManager.default.removeItem(at: url)
+        dpLog("Cleaned up update backup at \(backupPath)")
+    }
+
     // MARK: - Semantic Version Comparison
 
     static func compareVersions(_ a: String, isGreaterThan b: String) -> Bool {
@@ -312,4 +329,30 @@ private struct GitHubAsset: Decodable {
         case name
         case browserDownloadURL = "browser_download_url"
     }
+}
+
+// MARK: - Download Progress Delegate
+
+/// Tracks real download progress via URLSessionDownloadDelegate.
+private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate {
+    private let onProgress: (Double) -> Void
+
+    init(onProgress: @escaping (Double) -> Void) {
+        self.onProgress = onProgress
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        guard totalBytesExpectedToWrite > 0 else { return }
+        let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+        onProgress(min(progress, 1.0))
+    }
+
+    // Required but unused — the completion handler on the task handles this
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {}
 }

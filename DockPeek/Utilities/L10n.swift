@@ -53,6 +53,8 @@ struct L10n {
     static var livePreviewOnHover: String { s("livePreviewOnHover") }
     static var forceNewWindowsToPrimary: String { s("forceNewWindowsToPrimary") }
     static var showWindowTitles: String { s("showWindowTitles") }
+    static var showSnapButtons: String { s("showSnapButtons") }
+    static var showCloseButton: String { s("showCloseButton") }
     static var thumbnailSize: String { s("thumbnailSize") }
 
     // MARK: - Permissions

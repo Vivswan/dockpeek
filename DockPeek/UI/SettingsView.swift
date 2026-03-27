@@ -14,7 +14,6 @@ struct GeneralSettingsPane: View {
         f.unitsStyle = .short
         return f
     }()
-
     var body: some View {
         Settings.Container(contentWidth: 450) {
             Settings.Section(title: "", bottomDivider: true) {
@@ -30,32 +29,59 @@ struct GeneralSettingsPane: View {
 
             Settings.Section(title: "", bottomDivider: true) {
                 Toggle(L10n.autoUpdateToggle, isOn: $appState.autoUpdateEnabled)
-                Button(action: performUpdateCheck) {
-                    HStack(spacing: 6) {
-                        if isCheckingUpdate { ProgressView().controlSize(.small) }
-                        Text(L10n.checkNow)
+                HStack(spacing: 8) {
+                    Button(action: performUpdateCheck) {
+                        HStack(spacing: 6) {
+                            if isCheckingUpdate { ProgressView().controlSize(.small) }
+                            Text(L10n.checkNow)
+                        }
+                    }
+                    .disabled(isCheckingUpdate)
+                    if let lastDate = updateChecker.lastCheckDate {
+                        Text("\(L10n.lastChecked) \(Self.relativeDateFormatter.localizedString(for: lastDate, relativeTo: Date()))")
+                            .font(.caption).foregroundColor(.secondary)
                     }
                 }
-                .disabled(isCheckingUpdate)
                 if updateChecker.updateAvailable || updateChecker.upgradeState != .idle {
                     updateAvailableSection
                 }
             }
 
-            Settings.Section(label: { Text(L10n.language) }) {
+            Settings.Section(bottomDivider: true, verticalAlignment: .center, label: { Text(L10n.language) }) {
                 Picker("", selection: $appState.language) {
                     ForEach(Language.allCases, id: \.rawValue) { lang in
                         Text(lang.displayName).tag(lang.rawValue)
                     }
                 }
-                .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 180)
+                .frame(width: 140)
+                .offset(x: -24)
                 .onChange(of: appState.language) { _, _ in langRefresh = UUID() }
             }
 
-            Settings.Section(title: "", bottomDivider: false) {
-                permissionStatus
+            Settings.Section(verticalAlignment: .top, label: { Text(L10n.permissions) }) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(AccessibilityManager.shared.isAccessibilityGranted ? Color.green : Color.red)
+                        .frame(width: 8, height: 8)
+                    Text(AccessibilityManager.shared.isAccessibilityGranted
+                         ? L10n.accessibilityGranted : L10n.accessibilityRequired)
+                        .font(.caption).foregroundColor(.secondary)
+                    if !AccessibilityManager.shared.isAccessibilityGranted {
+                        Button(L10n.grantPermission) { AccessibilityManager.shared.openAccessibilitySettings() }
+                            .font(.caption)
+                    }
+                }
+
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(screenRecordingOK ? Color.green : Color.red)
+                        .frame(width: 8, height: 8)
+                    Text(screenRecordingOK
+                         ? L10n.screenRecordingGranted : L10n.screenRecordingRequired)
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                .onAppear { screenRecordingOK = DiagnosticChecker.isScreenRecordingEffective }
             }
         }
         .id(langRefresh)
@@ -131,50 +157,6 @@ struct GeneralSettingsPane: View {
     // MARK: - Permissions
 
     @State private var screenRecordingOK = DiagnosticChecker.isScreenRecordingEffective
-    @State private var diagnosticsCopied = false
-
-    private var permissionStatus: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(L10n.permissions).font(.caption).foregroundColor(.secondary)
-
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(AccessibilityManager.shared.isAccessibilityGranted ? Color.green : Color.red)
-                    .frame(width: 8, height: 8)
-                Text(AccessibilityManager.shared.isAccessibilityGranted
-                     ? L10n.accessibilityGranted : L10n.accessibilityRequired)
-                    .font(.caption).foregroundColor(.secondary)
-                if !AccessibilityManager.shared.isAccessibilityGranted {
-                    Button(L10n.grantPermission) { AccessibilityManager.shared.openAccessibilitySettings() }
-                        .font(.caption)
-                }
-            }
-
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(screenRecordingOK ? Color.green : Color.red)
-                    .frame(width: 8, height: 8)
-                Text(screenRecordingOK
-                     ? L10n.screenRecordingGranted : L10n.screenRecordingRequired)
-                    .font(.caption).foregroundColor(.secondary)
-            }
-            .onAppear { screenRecordingOK = DiagnosticChecker.isScreenRecordingEffective }
-
-            Button(action: {
-                let report = DiagnosticChecker.run()
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(report.text, forType: .string)
-                diagnosticsCopied = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { diagnosticsCopied = false }
-            }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "doc.on.doc")
-                    Text(diagnosticsCopied ? L10n.diagnosticsCopied : L10n.copyDiagnostics)
-                }
-            }
-            .font(.caption)
-        }
-    }
 }
 
 // MARK: - Appearance Pane
@@ -204,6 +186,8 @@ struct AppearanceSettingsPane: View {
             // Window display options + thumbnail size
             Settings.Section(title: "", bottomDivider: false) {
                 Toggle(L10n.showWindowTitles, isOn: $appState.showWindowTitles)
+                Toggle(L10n.showCloseButton, isOn: $appState.showCloseButton)
+                Toggle(L10n.showSnapButtons, isOn: $appState.showSnapButtons)
                 Toggle(L10n.forceNewWindowsToPrimary, isOn: $appState.forceNewWindowsToPrimary)
             }
 
@@ -218,7 +202,7 @@ struct AppearanceSettingsPane: View {
             }
 
             // Excluded apps
-            Settings.Section(title: "", bottomDivider: false) {
+            Settings.Section(label: { Text(L10n.excludedApps) }) {
                 exclusionList
             }
         }
@@ -226,8 +210,6 @@ struct AppearanceSettingsPane: View {
 
     private var exclusionList: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(L10n.excludedApps).font(.caption).foregroundColor(.secondary)
-
             ForEach(Array(appState.excludedBundleIDs.sorted()), id: \.self) { bid in
                 HStack {
                     Text(bid).font(.caption).lineLimit(1)
@@ -246,23 +228,28 @@ struct AppearanceSettingsPane: View {
             HStack {
                 TextField(L10n.addPlaceholder, text: $newExcludedID)
                     .textFieldStyle(.roundedBorder).font(.caption)
-                Button(L10n.add) {
-                    let t = newExcludedID.trimmingCharacters(in: .whitespaces)
-                    guard !t.isEmpty else { return }
-                    var ids = appState.excludedBundleIDs
-                    ids.insert(t)
-                    appState.excludedBundleIDs = ids
-                    newExcludedID = ""
-                }
-                .disabled(newExcludedID.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .onSubmit { addExcludedApp() }
+                Button(L10n.add) { addExcludedApp() }
+                    .disabled(newExcludedID.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
+    }
+
+    private func addExcludedApp() {
+        let t = newExcludedID.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty else { return }
+        var ids = appState.excludedBundleIDs
+        ids.insert(t)
+        appState.excludedBundleIDs = ids
+        newExcludedID = ""
     }
 }
 
 // MARK: - About Pane
 
 struct AboutSettingsPane: View {
+    @State private var diagnosticsCopied = false
+
     var body: some View {
         VStack(spacing: 16) {
             Spacer()
@@ -305,9 +292,20 @@ struct AboutSettingsPane: View {
 
             Spacer()
 
-            Button(L10n.quit) { NSApplication.shared.terminate(nil) }
-                .foregroundColor(.red)
-                .padding(.bottom, 8)
+            Button(action: {
+                let report = DiagnosticChecker.run()
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(report.text, forType: .string)
+                diagnosticsCopied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { diagnosticsCopied = false }
+            }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "doc.on.doc")
+                    Text(diagnosticsCopied ? L10n.diagnosticsCopied : L10n.copyDiagnostics)
+                }
+            }
+            .font(.caption)
+            .padding(.bottom, 8)
         }
         .frame(minWidth: 400, minHeight: 300)
     }
