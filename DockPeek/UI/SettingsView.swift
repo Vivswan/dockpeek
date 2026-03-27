@@ -188,6 +188,8 @@ struct AppearanceSettingsPane: View {
                 Toggle(L10n.showWindowTitles, isOn: $appState.showWindowTitles)
                 Toggle(L10n.showCloseButton, isOn: $appState.showCloseButton)
                 Toggle(L10n.showSnapButtons, isOn: $appState.showSnapButtons)
+                Toggle(L10n.showMinimizedWindows, isOn: $appState.showMinimizedWindows)
+                Toggle(L10n.showOtherSpaceWindows, isOn: $appState.showOtherSpaceWindows)
                 Toggle(L10n.forceNewWindowsToPrimary, isOn: $appState.forceNewWindowsToPrimary)
             }
 

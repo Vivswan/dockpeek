@@ -278,7 +278,11 @@ final class HoverPreviewController {
     private func handleHoverPreview(for pid: pid_t, at point: CGPoint) {
         guard appState.previewOnHover else { return }
 
-        let windows = windowManager.windowsForApp(pid: pid)
+        let windows = windowManager.windowsForApp(
+            pid: pid,
+            includeMinimized: appState.showMinimizedWindows,
+            includeOtherSpaces: appState.showOtherSpaceWindows
+        )
         guard !windows.isEmpty else { return }
 
         dpLog("Hover preview: \(windows.count) window(s) for PID \(pid)")

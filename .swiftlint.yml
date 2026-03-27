@@ -79,6 +79,7 @@ identifier_name:
     - sz       # size
     - fn       # function reference
     - GetPSNForPID  # C-interop function, matches Apple API naming
+    - _axGetWindow  # Private API wrapper, underscore prefix intentional
 
 function_parameter_count:
   warning: 7

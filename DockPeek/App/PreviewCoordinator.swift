@@ -72,7 +72,11 @@ final class PreviewCoordinator {
                 self?.windowManager.closeWindow(windowID: win.id, pid: win.ownerPID)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     guard let self else { return }
-                    let remaining = self.windowManager.windowsForApp(pid: win.ownerPID)
+                    let remaining = self.windowManager.windowsForApp(
+                        pid: win.ownerPID,
+                        includeMinimized: self.appState.showMinimizedWindows,
+                        includeOtherSpaces: self.appState.showOtherSpaceWindows
+                    )
                     if remaining.count < 2 {
                         self.previewPanel.dismissPanel()
                     } else {
@@ -92,6 +96,12 @@ final class PreviewCoordinator {
             onHoverWindow: { [weak self] (win: WindowInfo?) in
                 guard let self, appState.livePreviewOnHover else { return }
                 if let win {
+                    // Skip highlight overlay for minimized or other-Space windows
+                    // (their screen position is stale or invisible)
+                    guard !win.isMinimized, !win.isOnOtherSpace else {
+                        highlightOverlay.hide()
+                        return
+                    }
                     highlightOverlay.show(for: win)
                     let hoveredID = win.id
                     windowManager.captureOverlayImage(for: win.id, bounds: win.bounds) { [weak self] image in

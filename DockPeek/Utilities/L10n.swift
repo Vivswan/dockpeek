@@ -119,6 +119,9 @@ enum L10n {
     // MARK: - Preview
 
     static var minimized: String { s("minimized") }
+    static var otherDesktop: String { s("otherDesktop") }
+    static var showMinimizedWindows: String { s("showMinimizedWindows") }
+    static var showOtherSpaceWindows: String { s("showOtherSpaceWindows") }
 
     // MARK: - Onboarding
 

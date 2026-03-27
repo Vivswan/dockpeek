@@ -119,6 +119,10 @@ struct PreviewContentView: View {
                 Text(L10n.minimized)
                     .font(.caption2)
                     .foregroundColor(.secondary)
+            } else if w.isOnOtherSpace {
+                Text(L10n.otherDesktop)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
         }
         .padding(6)

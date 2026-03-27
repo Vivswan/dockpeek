@@ -78,6 +78,9 @@
 
 /* Preview */
 "minimized" = "Minimized";
+"otherDesktop" = "Other Desktop";
+"showMinimizedWindows" = "Show minimized windows";
+"showOtherSpaceWindows" = "Show windows on other desktops";
 
 /* Onboarding */
 "onboardingTitle" = "DockPeek needs Accessibility access";

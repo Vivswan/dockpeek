@@ -78,6 +78,9 @@
 
 /* Preview */
 "minimized" = "최소화됨";
+"otherDesktop" = "다른 데스크톱";
+"showMinimizedWindows" = "최소화된 창 표시";
+"showOtherSpaceWindows" = "다른 데스크톱의 창 표시";
 
 /* Onboarding */
 "onboardingTitle" = "DockPeek에 손쉬운 사용 권한이 필요합니다";

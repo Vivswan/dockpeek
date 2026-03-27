@@ -18,6 +18,8 @@ final class AppState: ObservableObject {
     @AppStorage("updateCheckInterval") var updateCheckInterval = "daily" // "daily", "weekly", "manual"
     @AppStorage("showSnapButtons") var showSnapButtons = true
     @AppStorage("showCloseButton") var showCloseButton = true
+    @AppStorage("showMinimizedWindows") var showMinimizedWindows = false
+    @AppStorage("showOtherSpaceWindows") var showOtherSpaceWindows = false
 
     private lazy var cachedExcludedBundleIDs: Set<String> = Self.parseExcludedIDs(excludedBundleIDsRaw)
 

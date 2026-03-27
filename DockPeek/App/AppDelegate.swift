@@ -331,7 +331,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
                let dockApp = dockInspector.appAtPoint(point),
                dockApp.isRunning, let pid = dockApp.pid,
                !appState.isExcluded(bundleID: dockApp.bundleIdentifier) {
-                let windows = windowManager.windowsForApp(pid: pid)
+                let windows = windowManager.windowsForApp(
+                    pid: pid,
+                    includeMinimized: appState.showMinimizedWindows,
+                    includeOtherSpaces: appState.showOtherSpaceWindows
+                )
                 if windows.count >= 2 {
                     let bundleID = dockApp.bundleIdentifier ?? dockApp.name
                     if bundleID != hoverController.lastHoveredBundleID {
@@ -384,7 +388,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
         }
         if appState.isExcluded(bundleID: dockApp.bundleIdentifier) { return false }
 
-        let windows = windowManager.windowsForApp(pid: pid)
+        let windows = windowManager.windowsForApp(
+            pid: pid,
+            includeMinimized: appState.showMinimizedWindows,
+            includeOtherSpaces: appState.showOtherSpaceWindows
+        )
 
         // Running app with < 2 windows: warp cursor for primary placement
         if windows.count < 2, appState.forceNewWindowsToPrimary {
