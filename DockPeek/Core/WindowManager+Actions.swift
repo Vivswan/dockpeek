@@ -17,6 +17,18 @@ private func GetPSNForPID(_ pid: pid_t, _ psn: inout ProcessSerialNumber) -> OSS
 
 extension WindowManager {
 
+    // MARK: - AX Helpers
+
+    /// Unminimize a window if it's currently minimized (Dock-stashed).
+    private func unminimizeIfNeeded(_ axWindow: AXUIElement, windowID: CGWindowID) {
+        var minimizedRef: AnyObject?
+        AXUIElementCopyAttributeValue(axWindow, kAXMinimizedAttribute as CFString, &minimizedRef)
+        if (minimizedRef as? Bool) == true {
+            AXUIElementSetAttributeValue(axWindow, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+            dpLog("Unminimized window \(windowID)")
+        }
+    }
+
     // MARK: - AX Window Matching
 
     /// Find the AXUIElement for a given CGWindowID by matching against AX windows.
@@ -97,54 +109,50 @@ extension WindowManager {
     func activateWindow(windowID: CGWindowID, pid: pid_t) {
         let app = NSRunningApplication(processIdentifier: pid)
 
-        // 1. Match AX window by CGWindowID (100% reliable via private API)
+        // 1. Try to find AX window (best-effort — may fail for other-Space windows
+        //    since AX can't enumerate windows not on the current Space)
         var targetAXWindow = findAXWindow(for: windowID, pid: pid)
 
         if targetAXWindow != nil {
             dpLog("Matched by CGWindowID: \(windowID)")
-        }
-
-        // Fallback: get AX windows list for title/position matching
-        if targetAXWindow == nil {
+        } else {
+            // Fallback: try title/position matching (no early return — SkyLight must still run)
             let axApp = AXUIElementCreateApplication(pid)
             var windowsRef: AnyObject?
-            guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsRef) == .success,
-                  let axWindows = windowsRef as? [AXUIElement], !axWindows.isEmpty else {
-                dpLog("Could not get AX windows for PID \(pid) — activating app only")
-                app?.activate()
-                return
+            if AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+               let axWindows = windowsRef as? [AXUIElement], !axWindows.isEmpty {
+                targetAXWindow = fallbackMatchAXWindow(windowID: windowID, pid: pid, axWindows: axWindows)
+            } else {
+                dpLog("Could not get AX windows for PID \(pid) — will try SkyLight activation")
             }
-            targetAXWindow = fallbackMatchAXWindow(windowID: windowID, pid: pid, axWindows: axWindows)
         }
 
-        guard let axWindow = targetAXWindow else { return }
-
-        // Unminimize if the window is currently minimized
-        var minimizedRef: AnyObject?
-        AXUIElementCopyAttributeValue(axWindow, kAXMinimizedAttribute as CFString, &minimizedRef)
-        if (minimizedRef as? Bool) == true {
-            AXUIElementSetAttributeValue(axWindow, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
-            dpLog("Unminimized window \(windowID)")
+        // 2. Unminimize if needed (only possible with AX window)
+        if let axWindow = targetAXWindow {
+            unminimizeIfNeeded(axWindow, windowID: windowID)
         }
 
-        // 2. Activate: SkyLight first, then AX raise (AltTab's proven approach)
-        //    SkyLight handles both Space switching (full-screen) and single-window
-        //    activation (normal). AX raise after ensures the correct window is on top.
+        // 3. SkyLight space switch — ALWAYS runs, even without an AX window.
+        //    This is the only API that can switch Spaces to reach other-desktop windows.
+        //    Without this, clicking "Other Desktop" windows does nothing.
         var psn = ProcessSerialNumber()
         GetPSNForPID(pid, &psn)
 
         if let slps = _slpsSetFront {
-            _ = slps(&psn, UInt32(windowID), 0x2)
+            let result = slps(&psn, UInt32(windowID), 0x2)
+            dpLog("SkyLight activate: window=\(windowID) pid=\(pid) result=\(result)")
         } else {
             app?.activate()
         }
 
-        AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
-        AXUIElementSetAttributeValue(axWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
+        // 4. AX raise/focus (only if we have an AX window)
+        if let axWindow = targetAXWindow {
+            AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
+            AXUIElementSetAttributeValue(axWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
 
-        // Set this window as the app's focused window so keyboard input goes to it
-        let axApp = AXUIElementCreateApplication(pid)
-        AXUIElementSetAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, axWindow)
+            let axApp = AXUIElementCreateApplication(pid)
+            AXUIElementSetAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, axWindow)
+        }
 
         // Ensure the app is frontmost with keyboard focus
         app?.activate()
@@ -182,13 +190,7 @@ extension WindowManager {
     func snapWindow(windowID: CGWindowID, pid: pid_t, position: SnapPosition) {
         guard let axWindow = findAXWindow(for: windowID, pid: pid) else { return }
 
-        // Unminimize if the window is currently minimized
-        var minimizedRef: AnyObject?
-        AXUIElementCopyAttributeValue(axWindow, kAXMinimizedAttribute as CFString, &minimizedRef)
-        if (minimizedRef as? Bool) == true {
-            AXUIElementSetAttributeValue(axWindow, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
-            dpLog("Unminimized window \(windowID) before snapping")
-        }
+        unminimizeIfNeeded(axWindow, windowID: windowID)
 
         // Get current window position to determine which screen it's on
         var posRef: AnyObject?

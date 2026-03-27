@@ -173,16 +173,34 @@ final class WindowManager {
     /// overlays, helper windows, and other non-standard windows (e.g. Chrome translation bar).
     func windowsForApp(pid: pid_t, includeMinimized: Bool = false, includeOtherSpaces: Bool = false) -> [WindowInfo] {
         let list = cachedWindowList()
-
-        // Get AX window info (IDs + minimized state) upfront for filtering and state detection
         let axInfo = axWindowInfo(for: pid)
+        return Self.filterWindows(
+            from: list, pid: pid, axInfo: axInfo,
+            includeMinimized: includeMinimized, includeOtherSpaces: includeOtherSpaces
+        )
+    }
+
+    /// Pure filtering logic extracted for testability.
+    /// Takes raw CG window list and AX info, returns filtered+sorted WindowInfo array.
+    static func filterWindows(
+        from list: [[String: Any]],
+        pid: pid_t,
+        axInfo: [CGWindowID: Bool],
+        includeMinimized: Bool,
+        includeOtherSpaces: Bool
+    ) -> [WindowInfo] {
+        let axIDs = Set(axInfo.keys)
 
         var windows: [WindowInfo] = []
+        var seenIDs = Set<CGWindowID>()
 
         for info in list {
             guard let ownerPID = info[kCGWindowOwnerPID as String] as? pid_t,
                   ownerPID == pid,
                   let windowID = info[kCGWindowNumber as String] as? CGWindowID else { continue }
+
+            // Deduplicate: CGWindowListCopyWindowInfo can return duplicate entries
+            guard seenIDs.insert(windowID).inserted else { continue }
 
             let layer = info[kCGWindowLayer as String] as? Int ?? -1
             guard layer == 0 else { continue }
@@ -195,6 +213,26 @@ final class WindowManager {
             guard alpha > 0 else { continue }
 
             let isOnScreen = info[kCGWindowIsOnscreen as String] as? Bool ?? false
+            let title = info[kCGWindowName as String] as? String ?? ""
+            let ownerName = info[kCGWindowOwnerName as String] as? String ?? ""
+            let isInAX = axIDs.contains(windowID)
+
+            // Filter ghost/helper windows:
+            // - On-screen windows: must be in AX set (if we have AX data) to exclude
+            //   overlays, tooltips, and helper windows.
+            // - Off-screen windows: AX can't see windows on other Spaces, so we can't
+            //   use AX filtering. Instead, require a non-empty title — real user windows
+            //   always have titles, while ghost windows (toolbars 1800x39, splash screens,
+            //   Dock tiles, UI accessories) have empty titles.
+            if isInAX {
+                // AX confirmed this is a real window — always include
+            } else if isOnScreen {
+                // On-screen but not in AX — ghost/helper window
+                if !axIDs.isEmpty { continue }
+            } else {
+                // Off-screen and not in AX — require non-empty title
+                if title.isEmpty { continue }
+            }
 
             // Determine actual minimized vs other-Space state using AX info
             let isMinimized = !isOnScreen && (axInfo[windowID] ?? false)
@@ -206,9 +244,6 @@ final class WindowManager {
                 if isOnOtherSpace, !includeOtherSpaces { continue }
             }
 
-            let title = info[kCGWindowName as String] as? String ?? ""
-            let ownerName = info[kCGWindowOwnerName as String] as? String ?? ""
-
             windows.append(WindowInfo(
                 id: windowID, title: title, bounds: bounds,
                 ownerPID: ownerPID, ownerName: ownerName,
@@ -216,18 +251,6 @@ final class WindowManager {
                 isOnOtherSpace: isOnOtherSpace,
                 thumbnail: nil
             ))
-        }
-
-        // Cross-reference with AX windows to filter out overlays/helper windows.
-        // AX kAXWindowsAttribute only returns "real" user-facing windows,
-        // excluding Chrome translation bars, tooltips, popovers, etc.
-        let axIDs = Set(axInfo.keys)
-        if !axIDs.isEmpty {
-            let before = windows.count
-            windows = windows.filter { axIDs.contains($0.id) }
-            if windows.count != before {
-                dpLog("AX filter: \(before) → \(windows.count) windows for PID \(pid)")
-            }
         }
 
         // Sort: on-screen first, then other Space, then minimized
@@ -238,7 +261,7 @@ final class WindowManager {
         }
 
         dpLog(
-            "Found \(windows.count) windows for PID \(pid) (includeMinimized=\(includeMinimized), includeOtherSpaces=\(includeOtherSpaces))"
+            "Found \(windows.count) windows for PID \(pid) (includeMinimized=\(includeMinimized), includeOtherSpaces=\(includeOtherSpaces), axIDs=\(axIDs.count))"
         )
         return windows
     }
@@ -294,7 +317,7 @@ final class WindowManager {
 
     /// Returns a cached thumbnail synchronously, or nil on cache miss.
     /// This is the fast path — no async work, no capture, no side effects.
-    func thumbnail(for windowID: CGWindowID, maxSize _: CGFloat = 200) -> NSImage? {
+    func thumbnail(for windowID: CGWindowID) -> NSImage? {
         let effectiveTTL = isPreviewVisible ? extendedCacheTTL : cacheTTL
 
         stateLock.lock()

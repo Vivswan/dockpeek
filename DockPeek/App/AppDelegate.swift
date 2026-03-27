@@ -289,6 +289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
     }
 
     @objc private func screenDidChange() {
+        ScreenGeometry.invalidateCache()
         hoverController.updateCachedDockRect()
     }
 

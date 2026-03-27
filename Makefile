@@ -66,6 +66,20 @@ dev: kill
 	@echo "Binary updated. Launching..."
 	@open "$(INSTALL_APP)"
 
+# Fast dev cycle with stdout logging — runs in foreground so output is visible
+debug: kill
+	@echo "Compiling (debug)..."
+	@mkdir -p build/Debug
+	@swiftc $(SWIFT_FLAGS) -Onone -g -o build/Debug/$(APP_NAME) $(SWIFT_FILES)
+	@if [ ! -d "$(INSTALL_APP)" ]; then \
+		echo "Error: Run 'make setup' first to install DockPeek.app"; exit 1; \
+	fi
+	@cp build/Debug/$(APP_NAME) "$(INSTALL_BIN)"
+	$(call bundle-resources,"$(INSTALL_APP)")
+	$(call sign-app,"$(INSTALL_APP)")
+	@echo "Binary updated. Launching in foreground (stdout visible)..."
+	@"$(INSTALL_BIN)"
+
 # Kill running instance
 kill:
 	@pkill -x $(APP_NAME) 2>/dev/null || true

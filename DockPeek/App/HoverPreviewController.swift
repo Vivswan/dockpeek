@@ -156,7 +156,10 @@ final class HoverPreviewController {
         let cgPoint = ScreenGeometry.cocoaToCG(NSEvent.mouseLocation)
 
         let inDock = cachedDockRect.contains(cgPoint)
-        previewIsVisible = previewPanel.isVisible
+        let currentlyVisible = previewPanel.isVisible
+        if previewIsVisible != currentlyVisible {
+            previewIsVisible = currentlyVisible
+        }
         let needsActive = inDock || previewIsVisible
 
         // Adapt polling interval

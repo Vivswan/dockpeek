@@ -21,7 +21,6 @@ final class PreviewPanel: NSPanel {
     private var globalMonitor: Any?
     let navState = PreviewNavState()
     let windowsModel = PreviewWindowsModel()
-    private var storedWindows: [WindowInfo] = []
     private var storedOnSelect: ((WindowInfo) -> Void)?
     private var storedOnClose: ((WindowInfo) -> Void)?
     private var storedOnSnap: ((WindowInfo, SnapPosition) -> Void)?
@@ -68,7 +67,6 @@ final class PreviewPanel: NSPanel {
         onHoverWindow: @escaping (WindowInfo?) -> Void = { _ in }
     ) {
         dismissGeneration &+= 1 // Invalidate any pending deferred cleanup
-        storedWindows = windows
         storedOnSelect = onSelect
         storedOnClose = onClose
         storedOnSnap = onSnap
@@ -124,7 +122,6 @@ final class PreviewPanel: NSPanel {
     /// Updates the ObservableObject — SwiftUI diffs the change instead of recreating the hierarchy.
     func updateThumbnails(_ windows: [WindowInfo]) {
         guard isVisible else { return }
-        storedWindows = windows
         windowsModel.windows = windows
     }
 
@@ -157,7 +154,6 @@ final class PreviewPanel: NSPanel {
     }
 
     private func clearStoredState() {
-        storedWindows = []
         storedOnSelect = nil
         storedOnClose = nil
         storedOnSnap = nil
@@ -175,7 +171,7 @@ final class PreviewPanel: NSPanel {
         }
 
         let screenFrame = screen.visibleFrame
-        let primaryH = NSScreen.screens.first?.frame.height ?? screen.frame.height
+        let primaryH = ScreenGeometry.primaryScreenHeight
 
         // Convert CG (top-left origin) → Cocoa (bottom-left origin)
         // Must use primary screen height — CG origin is at top-left of primary screen
@@ -209,9 +205,9 @@ final class PreviewPanel: NSPanel {
     }
 
     private func screenForCGPoint(_ pt: CGPoint) -> NSScreen? {
-        let primaryH = NSScreen.screens.first?.frame.height ?? 0
+        let cocoaPt = ScreenGeometry.cgToCocoa(pt)
         for screen in NSScreen.screens {
-            if screen.frame.contains(NSPoint(x: pt.x, y: primaryH - pt.y)) { return screen }
+            if screen.frame.contains(cocoaPt) { return screen }
         }
         return NSScreen.screens.first
     }
@@ -240,13 +236,13 @@ final class PreviewPanel: NSPanel {
                     return nil
                 case 124: // Right arrow
                     let idx = navState.selectedIndex
-                    let max = storedWindows.count - 1
+                    let max = windowsModel.windows.count - 1
                     navState.selectedIndex = idx < 0 ? 0 : min(idx + 1, max)
                     return nil
                 case 36: // Enter
                     let idx = navState.selectedIndex
-                    if idx >= 0, idx < storedWindows.count {
-                        storedOnSelect?(storedWindows[idx])
+                    if idx >= 0, idx < windowsModel.windows.count {
+                        storedOnSelect?(windowsModel.windows[idx])
                     }
                     return nil
                 default: break

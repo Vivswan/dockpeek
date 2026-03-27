@@ -18,12 +18,21 @@ enum L10n {
         Language(rawValue: UserDefaults.standard.string(forKey: "appLanguage") ?? "en") ?? .en
     }
 
-    /// Localized bundle for the current language.
+    /// Cached localized bundle — avoids repeated filesystem lookups on every string access.
+    private static var cachedBundle: Bundle?
+    private static var cachedLang: String?
+
     private static var bundle: Bundle {
-        guard let path = Bundle.main.path(forResource: current.rawValue, ofType: "lproj"),
+        let lang = current.rawValue
+        if lang == cachedLang, let cached = cachedBundle { return cached }
+        guard let path = Bundle.main.path(forResource: lang, ofType: "lproj"),
               let b = Bundle(path: path) else {
+            cachedBundle = Bundle.main
+            cachedLang = lang
             return Bundle.main
         }
+        cachedBundle = b
+        cachedLang = lang
         return b
     }
 

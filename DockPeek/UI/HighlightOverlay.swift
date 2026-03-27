@@ -8,6 +8,8 @@ final class HighlightOverlay {
     private(set) var currentID: CGWindowID?
     private var isHiding = false
     private var overlayGeneration = 0
+    /// Reusable image sublayer — avoids allocating a new NSView + CALayer on every updateImage() call.
+    private var imageLayer: CALayer?
 
     func show(for windowInfo: WindowInfo) {
         // Skip if already showing for this window
@@ -56,14 +58,20 @@ final class HighlightOverlay {
     /// Update the overlay with a captured image (called after async capture completes).
     func updateImage(_ image: NSImage) {
         guard let window = overlayWindow else { return }
-        let size = window.frame.size
-        window.contentView = makeContainer(size: size, image: image)
+        if let layer = imageLayer {
+            layer.frame = NSRect(origin: .zero, size: window.frame.size)
+            layer.contents = image
+        } else {
+            let size = window.frame.size
+            window.contentView = makeContainer(size: size, image: image)
+        }
     }
 
     func hide() {
         guard let window = overlayWindow, !isHiding else { return }
         isHiding = true
         currentID = nil
+        imageLayer = nil
         let gen = overlayGeneration
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.1
@@ -113,6 +121,7 @@ final class HighlightOverlay {
             imgLayer.contents = image
             imgLayer.contentsGravity = .resizeAspect
             container.layer?.addSublayer(imgLayer)
+            imageLayer = imgLayer
         } else {
             container.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08).cgColor
         }

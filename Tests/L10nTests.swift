@@ -2,8 +2,13 @@ import XCTest
 
 final class L10nTests: XCTestCase {
 
+    override func setUp() {
+        super.setUp()
+        resetAppStateDefaults()
+    }
+
     override func tearDown() {
-        UserDefaults.standard.removeObject(forKey: "appLanguage")
+        resetAppStateDefaults()
         super.tearDown()
     }
 

@@ -59,21 +59,33 @@ final class DockAXInspector {
         }
 
         // 5. Find running application → PID
+        //    For multi-process apps (Electron: Teams, Slack, VS Code), prefer
+        //    the process with .regular activation policy (the main GUI process).
+        //    Helper processes have .prohibited or .accessory.
         var pid: pid_t?
         var isRunning = false
 
-        if let bid = bundleID,
-           let app = NSRunningApplication.runningApplications(withBundleIdentifier: bid).first {
-            pid = app.processIdentifier
-            isRunning = true
+        if let bid = bundleID {
+            let apps = NSRunningApplication.runningApplications(withBundleIdentifier: bid)
+            if let app = apps.first(where: { $0.activationPolicy == .regular }) ?? apps.first {
+                pid = app.processIdentifier
+                isRunning = true
+                if apps.count > 1 {
+                    dpLog(
+                        "Multi-process app: \(apps.count) PIDs for \(bid), selected PID \(app.processIdentifier) (policy=\(app.activationPolicy.rawValue))"
+                    )
+                }
+            }
         }
 
-        // Fallback: match by name
-        if pid == nil,
-           let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == title }) {
-            pid = app.processIdentifier
-            bundleID = bundleID ?? app.bundleIdentifier
-            isRunning = true
+        // Fallback: match by name (also prefer .regular policy)
+        if pid == nil {
+            let candidates = NSWorkspace.shared.runningApplications.filter { $0.localizedName == title }
+            if let app = candidates.first(where: { $0.activationPolicy == .regular }) ?? candidates.first {
+                pid = app.processIdentifier
+                bundleID = bundleID ?? app.bundleIdentifier
+                isRunning = true
+            }
         }
 
         // Fallback: AX attribute

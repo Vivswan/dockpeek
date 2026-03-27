@@ -11,10 +11,18 @@ import ApplicationServices
 /// `NSScreen.screens.first?.frame.height` — CG's origin is defined relative to the primary.
 enum ScreenGeometry {
 
+    /// Cached height of the primary screen in points.
+    /// Updated on screen-change notifications; avoids hitting NSScreen.screens
+    /// on every call (~15x/sec during active hover polling).
+    private static var cachedHeight: CGFloat = NSScreen.screens.first?.frame.height ?? 900
+
     /// Height of the primary screen in points. Returns a safe default of 900
     /// if no screens are available (headless/test contexts).
-    static var primaryScreenHeight: CGFloat {
-        NSScreen.screens.first?.frame.height ?? 900
+    static var primaryScreenHeight: CGFloat { cachedHeight }
+
+    /// Re-read the primary screen height. Call from the screen-change observer.
+    static func invalidateCache() {
+        cachedHeight = NSScreen.screens.first?.frame.height ?? 900
     }
 
     /// Convert a CG point (top-left origin) to a Cocoa point (bottom-left origin).
