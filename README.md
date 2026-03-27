@@ -116,11 +116,15 @@ DockPeek/
 ├── App/
 │   ├── DockPeekApp.swift          # @main entry point
 │   ├── AppDelegate.swift          # Menubar, event handling, orchestration
-│   └── AppState.swift             # User settings (ObservableObject)
+│   ├── AppState.swift             # User settings (ObservableObject)
+│   ├── HoverPreviewController.swift # Adaptive-polling hover state machine
+│   ├── PreviewCoordinator.swift   # Preview panel presentation & callbacks
+│   └── PrimaryScreenEnforcer.swift # Force new windows to primary display
 ├── Core/
 │   ├── EventTapManager.swift      # CGEventTap for global click interception
 │   ├── DockAXInspector.swift      # Accessibility hit-test for Dock icons
 │   ├── WindowManager.swift        # Window enumeration, thumbnails, activation
+│   ├── WindowManager+Actions.swift # Close, snap, and activate window actions
 │   └── AccessibilityManager.swift # Permission check & prompt
 ├── UI/
 │   ├── PreviewPanel.swift         # Floating NSPanel (non-activating)
@@ -131,19 +135,95 @@ DockPeek/
 ├── Models/
 │   ├── WindowInfo.swift           # Window metadata + thumbnail
 │   └── DockApp.swift              # Dock icon → app mapping
-└── Utilities/
-    ├── L10n.swift                 # Korean/English localization strings
-    ├── UpdateChecker.swift        # Auto-update: check, download, install, rollback
-    ├── DiagnosticChecker.swift    # System diagnostics + DockRectDetector
-    └── DebugLog.swift             # Debug-only logging
+├── Utilities/
+│   ├── L10n.swift                 # Korean/English localization strings
+│   ├── UpdateChecker.swift        # Auto-update: check, download, install, rollback
+│   ├── ScreenGeometry.swift       # Coordinate conversion (CG ↔ Cocoa) & snap geometry
+│   ├── DiagnosticChecker.swift    # System diagnostics + DockRectDetector
+│   └── DebugLog.swift             # Debug-only logging
+└── Vendor/
+    └── Settings/                  # Third-party settings window framework
+
+Tests/
+├── TestRunner.swift               # @main XCTest runner for make test
+├── TestHelpers.swift              # Shared test utilities & UserDefaults reset
+├── AppStateTests.swift            # AppState defaults, exclusion logic
+├── WindowInfoTests.swift          # WindowInfo equality, display title
+├── ScreenGeometryTests.swift      # Coordinate conversions, snap positions
+├── L10nTests.swift                # Language cases, display names
+├── UpdateCheckerTests.swift       # Version comparison, update intervals
+├── UpgradeStateTests.swift        # UpgradeState enum equality
+├── DiagnosticReportTests.swift    # Report text assembly
+└── DockAppTests.swift             # DockApp initialization edge cases
 
 hooks/
-└── pre-commit                     # Pre-commit: lint + format check
+└── pre-commit                     # Pre-commit: lint + format + tests
 
 .swiftlint.yml                     # SwiftLint configuration
 .swiftformat                       # SwiftFormat configuration
-Makefile                           # Build, dev workflow, code quality targets
+project.yml                       # XcodeGen project spec
+Makefile                           # Build, dev workflow, tests, code quality
 ```
+
+## Setting Up from Scratch
+
+Everything you need to clone the repo and start developing on a fresh Mac.
+
+### Prerequisites
+
+| Tool | Install | Required for |
+|---|---|---|
+| **Xcode.app** | [Mac App Store](https://apps.apple.com/app/xcode/id497799835) | Building, testing, SwiftLint |
+| **Homebrew** | [brew.sh](https://brew.sh) | Installing dev tools |
+| **SwiftLint** | `brew install swiftlint` | Linting (pre-commit) |
+| **SwiftFormat** | `brew install swiftformat` | Formatting (pre-commit) |
+| **XcodeGen** | `brew install xcodegen` | Xcode project generation (optional) |
+
+### Step-by-step Setup
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/ongjin/dockpeek.git
+cd dockpeek
+
+# 2. Make sure Xcode is selected (not Command Line Tools)
+sudo xcode-select -s /Applications/Xcode.app
+
+# 3. Install dev tools
+brew install swiftlint swiftformat
+
+# 4. Activate the pre-commit hook (runs lint + format + tests on every commit)
+make hooks
+
+# 5. Build, install to /Applications, and launch
+#    macOS will prompt you to grant Accessibility permission on first run.
+make setup
+
+# 6. After granting permissions, use the fast dev loop:
+make dev    # Recompile → swap binary → launch (permissions preserved)
+```
+
+### Verifying Your Setup
+
+```bash
+make test       # Run 74 unit tests (requires Xcode.app)
+make check      # Run lint + format checks
+make build      # Debug build (without installing)
+```
+
+> **Note:** Tests and SwiftLint require the full Xcode.app, not just Command Line Tools.
+> If you see SourceKit errors, run `sudo xcode-select -s /Applications/Xcode.app`.
+
+### Optional: Xcode IDE
+
+If you prefer developing in Xcode instead of the Makefile workflow:
+
+```bash
+brew install xcodegen
+make open       # Generates DockPeek.xcodeproj and opens it in Xcode
+```
+
+The project spec is in `project.yml` and includes both the app target and the test target.
 
 ## Development
 
@@ -155,6 +235,9 @@ make kill       # Stop running DockPeek
 make dist       # Build release zip for distribution
 make clean      # Remove build artifacts
 
+# Testing
+make test       # Compile and run 74 unit tests
+
 # Code quality
 make lint       # Run SwiftLint (report only)
 make lint-fix   # Auto-fix lint issues
@@ -162,23 +245,27 @@ make format     # Auto-format with SwiftFormat
 make check      # Run all checks (lint + format)
 
 # Setup
-make hooks      # Install pre-commit hook (lint + format on staged files)
+make hooks      # Install pre-commit hook
+make generate   # Generate Xcode project from project.yml
+make open       # Generate + open in Xcode
 ```
 
 ### Code Quality Tools
 
-Install [SwiftLint](https://github.com/realm/SwiftLint) and [SwiftFormat](https://github.com/nicklockwood/SwiftFormat):
-
-```bash
-brew install swiftlint swiftformat
-make hooks   # activate pre-commit hook
-```
-
 - **SwiftLint** — catches common Swift issues and enforces style (config: `.swiftlint.yml`)
 - **SwiftFormat** — auto-formats code to a consistent style (config: `.swiftformat`)
-- **Pre-commit hook** — runs both tools on staged `.swift` files before each commit; soft-fails if tools aren't installed
+- **Unit tests** — 74 XCTest-based tests covering models, utilities, and geometry
+- **Pre-commit hook** — runs lint, format check, and tests on staged `.swift` files before each commit; soft-fails if tools aren't installed
 
-> SwiftLint requires Xcode.app (not just Command Line Tools). If you see SourceKit errors, run `sudo xcode-select -s /Applications/Xcode.app`.
+### Testing
+
+Tests are compiled with `-DTESTING` which excludes the `@main` entry point and allows the test runner to take over. The test binary uses Xcode's platform SDK for XCTest support.
+
+```bash
+make test
+```
+
+Tests cover: `AppState`, `WindowInfo`, `ScreenGeometry`, `L10n`, `UpdateChecker`, `UpgradeState`, `DiagnosticReport`, and `DockApp`.
 
 ## Known Limitations
 
