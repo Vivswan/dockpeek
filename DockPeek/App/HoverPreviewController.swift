@@ -5,7 +5,13 @@ import Combine
 /// Extracted from AppDelegate to isolate the adaptive-polling state machine.
 final class HoverPreviewController {
 
-    // MARK: - Dependencies (unowned — lifetime bounded by AppDelegate)
+    // MARK: - Dependencies
+
+    // Lifetime guarantee: these objects are owned by AppDelegate and live for the
+    // entire application lifetime. AppDelegate creates HoverPreviewController in
+    // applicationDidFinishLaunching and never deallocates it before termination.
+    // Using unowned avoids retain cycles and the overhead of weak reference nil-checks
+    // on every poll cycle (~15 Hz when active).
 
     private unowned let appState: AppState
     private unowned let dockInspector: DockAXInspector
@@ -175,7 +181,7 @@ final class HoverPreviewController {
         }
     }
 
-    func processHoverEvent(cgPoint: CGPoint) {
+    private func processHoverEvent(cgPoint: CGPoint) {
         guard appState.previewOnHover else { return }
 
         let cocoaLoc = ScreenGeometry.cgToCocoa(cgPoint)

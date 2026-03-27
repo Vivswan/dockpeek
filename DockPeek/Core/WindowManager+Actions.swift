@@ -166,8 +166,13 @@ extension WindowManager {
             dpLog("closeWindow: no close button for window \(windowID)")
             return
         }
-        // Safe: AXCloseButtonAttribute returns an AXUIElement
-        let closeButton = closeRef as! AXUIElement
+        // closeRef is guaranteed non-nil here (guard above); AXCloseButtonAttribute
+        // always returns an AXUIElement. Validate the CFTypeID to be defensive.
+        let closeButton = closeRef as! AXUIElement // swiftlint:disable:this force_cast
+        guard CFGetTypeID(closeButton) == AXUIElementGetTypeID() else {
+            dpLog("closeWindow: close button has unexpected CF type for window \(windowID)")
+            return
+        }
         AXUIElementPerformAction(closeButton, kAXPressAction as CFString)
         dpLog("Closed window \(windowID)")
     }

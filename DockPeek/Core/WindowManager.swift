@@ -22,6 +22,10 @@ final class WindowManager {
     /// Whether preview panel is currently visible — set by AppDelegate to extend cache TTL
     var isPreviewVisible = false
 
+    /// Active capture tasks — cancelled when preview is dismissed or new captures start
+    private var activeThumbnailTask: Task<Void, Never>?
+    private var activeOverlayTask: Task<Void, Never>?
+
     /// SCWindow lookup cache: windowID → SCWindow (avoids per-window SCShareableContent calls)
     private var scWindows: [CGWindowID: SCWindow] = [:]
     private var scWindowsTimestamp: Date = .distantPast
@@ -45,9 +49,24 @@ final class WindowManager {
     }
 
     /// Thread-safe write of a single thumbnail into the cache.
+    /// Prunes expired/excess entries on the write path to keep cache bounded.
     private nonisolated func storeThumbnail(_ image: NSImage, for windowID: CGWindowID) {
         stateLock.lock()
         thumbnailCache[windowID] = (image: image, timestamp: Date())
+
+        // Prune expired entries and enforce size limit
+        if thumbnailCache.count > maxCacheSize {
+            let effectiveTTL = isPreviewVisible ? extendedCacheTTL : cacheTTL
+            let now = Date()
+            thumbnailCache = thumbnailCache.filter { now.timeIntervalSince($0.value.timestamp) < effectiveTTL }
+            if thumbnailCache.count >= maxCacheSize {
+                let sorted = thumbnailCache.sorted { $0.value.timestamp < $1.value.timestamp }
+                for (id, _) in sorted.prefix(thumbnailCache.count - maxCacheSize + 1) {
+                    thumbnailCache.removeValue(forKey: id)
+                }
+            }
+        }
+
         stateLock.unlock()
     }
 
@@ -58,6 +77,14 @@ final class WindowManager {
             thumbnailCache.removeValue(forKey: wid)
         }
         stateLock.unlock()
+    }
+
+    /// Cancel any in-flight capture tasks (e.g. when preview is dismissed).
+    func cancelActiveTasks() {
+        activeThumbnailTask?.cancel()
+        activeThumbnailTask = nil
+        activeOverlayTask?.cancel()
+        activeOverlayTask = nil
     }
 
     /// Thread-safe check whether the SCWindow cache needs refreshing.
@@ -88,6 +115,10 @@ final class WindowManager {
     private var windowListCacheTimestamp: Date = .distantPast
     private let windowListCacheTTL: TimeInterval = 0.5
 
+    /// Serializes CGWindowListCopyWindowInfo fetches so only one thread
+    /// fetches at a time (avoids redundant system calls when cache is stale).
+    private let fetchLock = NSLock()
+
     /// AX window info cache: pid → (map of windowID → isMinimized, timestamp)
     private var axWindowInfoCache: [pid_t: ([CGWindowID: Bool], Date)] = [:]
     private let axWindowInfoCacheTTL: TimeInterval = 1.0
@@ -106,9 +137,20 @@ final class WindowManager {
         }
         stateLock.unlock()
 
-        // CGWindowListCopyWindowInfo is fast (~1-2ms); fetch outside lock to avoid
-        // blocking readers of valid cache, but use a separate fetch-lock to ensure
-        // only one thread fetches at a time.
+        // Serialize fetches: only one thread calls CGWindowListCopyWindowInfo.
+        // Others wait, then see the updated cache.
+        fetchLock.lock()
+        defer { fetchLock.unlock() }
+
+        // Double-check: another thread may have fetched while we waited
+        stateLock.lock()
+        if Date().timeIntervalSince(windowListCacheTimestamp) < windowListCacheTTL {
+            let cached = windowListCache
+            stateLock.unlock()
+            return cached
+        }
+        stateLock.unlock()
+
         guard let fetched = CGWindowListCopyWindowInfo(
             [.optionAll, .excludeDesktopElements], kCGNullWindowID
         ) as? [[String: Any]] else {
@@ -251,7 +293,7 @@ final class WindowManager {
     // MARK: - Thumbnails
 
     /// Returns a cached thumbnail synchronously, or nil on cache miss.
-    /// This is the fast path — no async work, no capture.
+    /// This is the fast path — no async work, no capture, no side effects.
     func thumbnail(for windowID: CGWindowID, maxSize _: CGFloat = 200) -> NSImage? {
         let effectiveTTL = isPreviewVisible ? extendedCacheTTL : cacheTTL
 
@@ -263,32 +305,19 @@ final class WindowManager {
             return cached.image
         }
 
-        // Prune expired entries and enforce size limit
-        let now = Date()
-        if thumbnailCache.count > maxCacheSize {
-            thumbnailCache = thumbnailCache.filter { now.timeIntervalSince($0.value.timestamp) < effectiveTTL }
-            if thumbnailCache.count >= maxCacheSize {
-                let sorted = thumbnailCache.sorted { $0.value.timestamp < $1.value.timestamp }
-                for (id, _) in sorted.prefix(thumbnailCache.count - maxCacheSize + 1) {
-                    thumbnailCache.removeValue(forKey: id)
-                }
-            }
-        }
-
         return nil
     }
 
     /// Captures thumbnails for multiple windows asynchronously via ScreenCaptureKit.
     /// Calls completion on the main queue with captured images.
-    ///
-    /// Uses a detached Task instead of DispatchSemaphore to avoid deadlock risk
-    /// when bridging between sync and async contexts.
+    /// Cancels any previously running thumbnail capture task.
     func captureThumbnails(
         for windowIDs: [CGWindowID],
         maxSize: CGFloat = 200,
         completion: @escaping ([CGWindowID: NSImage]) -> Void
     ) {
-        Task.detached { [weak self] in
+        activeThumbnailTask?.cancel()
+        activeThumbnailTask = Task.detached { [weak self] in
             guard let self else {
                 await MainActor.run { completion([:]) }
                 return
@@ -303,6 +332,8 @@ final class WindowManager {
                 return
             }
 
+            guard !Task.isCancelled else { return }
+
             // Resolve SCWindow objects for requested window IDs
             var windowMap = resolveWindows(windowIDs)
 
@@ -314,6 +345,8 @@ final class WindowManager {
                 } catch {}
                 windowMap = resolveWindows(windowIDs)
             }
+
+            guard !Task.isCancelled else { return }
 
             // Capture all windows concurrently
             var results: [CGWindowID: NSImage] = [:]
@@ -401,12 +434,14 @@ final class WindowManager {
 
     /// Captures a window at full resolution for the highlight overlay.
     /// The returned NSImage is sized to match the given bounds so it fills the overlay.
+    /// Cancels any previously running overlay capture task.
     func captureOverlayImage(
         for windowID: CGWindowID,
         bounds: CGRect,
         completion: @escaping (NSImage?) -> Void
     ) {
-        Task.detached { [weak self] in
+        activeOverlayTask?.cancel()
+        activeOverlayTask = Task.detached { [weak self] in
             guard let self else {
                 await MainActor.run { completion(nil) }
                 return

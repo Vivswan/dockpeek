@@ -17,23 +17,34 @@ final class EventTapManager {
     fileprivate var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var permissionWatchdog: DispatchSourceTimer?
+    /// Retained reference passed to the event tap callback.
+    /// Released in stop() to balance the passRetained in start().
+    private var retainedSelf: Unmanaged<EventTapManager>?
 
     func start() {
         guard !isActive else { return }
 
         let mask: CGEventMask = (1 << CGEventType.leftMouseDown.rawValue)
 
+        // Retain self for the callback's lifetime — released in stop().
+        // This prevents a use-after-free if the manager is deallocated
+        // while the event tap is still registered with the run loop.
+        let retained = Unmanaged.passRetained(self)
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: mask,
             callback: eventTapCallback,
-            userInfo: Unmanaged.passUnretained(self).toOpaque()
+            userInfo: retained.toOpaque()
         ) else {
+            // Balance the retain since we won't store it
+            retained.release()
             dpLog("Failed to create event tap — accessibility permission required")
             return
         }
+
+        retainedSelf = retained
 
         eventTap = tap
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
@@ -55,6 +66,9 @@ final class EventTapManager {
         }
         eventTap = nil
         runLoopSource = nil
+        // Balance the passRetained from start()
+        retainedSelf?.release()
+        retainedSelf = nil
         isActive = false
         dpLog("Event tap stopped and invalidated")
     }

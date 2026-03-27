@@ -95,7 +95,7 @@ final class PreviewPanel: NSPanel {
             navState: navState
         )
         contentView = nil // Release old hosting view before creating new one
-        let hosting = NSHostingView(rootView: AnyView(content))
+        let hosting = NSHostingView(rootView: content)
         contentView = hosting
 
         let fitting = hosting.fittingSize

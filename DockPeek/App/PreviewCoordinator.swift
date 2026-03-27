@@ -4,7 +4,13 @@ import AppKit
 /// Extracted from AppDelegate to isolate preview presentation from event handling.
 final class PreviewCoordinator {
 
-    // MARK: - Dependencies (unowned — lifetime bounded by AppDelegate)
+    // MARK: - Dependencies
+
+    // Lifetime guarantee: these objects are owned by AppDelegate and live for the
+    // entire application lifetime. AppDelegate creates PreviewCoordinator in
+    // applicationDidFinishLaunching and never deallocates it before termination.
+    // Using unowned avoids retain cycles and the overhead of weak reference nil-checks
+    // on every preview show/dismiss cycle.
 
     private unowned let appState: AppState
     private unowned let windowManager: WindowManager
@@ -92,6 +98,7 @@ final class PreviewCoordinator {
             onDismiss: { [weak self] in
                 self?.highlightOverlay.hide()
                 self?.previewPanel.dismissPanel()
+                self?.onPreviewVisibilityChanged?(false)
             },
             onHoverWindow: { [weak self] (win: WindowInfo?) in
                 guard let self, appState.livePreviewOnHover else { return }
