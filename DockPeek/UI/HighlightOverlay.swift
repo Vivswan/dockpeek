@@ -65,16 +65,16 @@ final class HighlightOverlay {
         isHiding = true
         currentID = nil
         let gen = overlayGeneration
-        NSAnimationContext.runAnimationGroup({ ctx in
+        NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.1
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             window.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
-            guard let self, self.overlayGeneration == gen else { return }
+        } completionHandler: { [weak self] in
+            guard let self, overlayGeneration == gen else { return }
             window.orderOut(nil)
-            self.overlayWindow = nil
-            self.isHiding = false
-        })
+            overlayWindow = nil
+            isHiding = false
+        }
     }
 
     // MARK: - Private

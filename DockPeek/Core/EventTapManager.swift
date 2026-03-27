@@ -106,7 +106,7 @@ final class EventTapManager {
 // MARK: - C callback
 
 private func eventTapCallback(
-    proxy: CGEventTapProxy,
+    proxy _: CGEventTapProxy,
     type: CGEventType,
     event: CGEvent,
     userInfo: UnsafeMutableRawPointer?

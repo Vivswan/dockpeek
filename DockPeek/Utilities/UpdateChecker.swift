@@ -3,7 +3,7 @@ import Combine
 
 enum UpgradeState: Equatable {
     case idle
-    case downloading(Double)   // progress 0.0–1.0
+    case downloading(Double) // progress 0.0–1.0
     case completed
     case failed(String)
 }
@@ -31,9 +31,9 @@ final class UpdateChecker: ObservableObject {
 
     static func intervalForSetting(_ setting: String) -> TimeInterval? {
         switch setting {
-        case "daily":  return 24 * 60 * 60
-        case "weekly": return 7 * 24 * 60 * 60
-        default:       return nil
+        case "daily": 24 * 60 * 60
+        case "weekly": 7 * 24 * 60 * 60
+        default: nil
         }
     }
 
@@ -100,7 +100,7 @@ final class UpdateChecker: ObservableObject {
             DispatchQueue.main.async { self?.upgradeState = .downloading(progress * 0.5) }
         }
         downloadSession = URLSession(configuration: .default, delegate: downloadDelegate, delegateQueue: nil)
-        downloadSession!.downloadTask(with: url) { [weak self] tempZip, response, error in
+        downloadSession!.downloadTask(with: url) { [weak self] tempZip, _, error in
             DispatchQueue.main.async {
                 guard let self else { return }
                 // Clean up session references
@@ -300,7 +300,7 @@ final class UpdateChecker: ObservableObject {
         let bParts = b.split(separator: ".").compactMap { Int($0) }
         let count = max(aParts.count, bParts.count)
 
-        for i in 0..<count {
+        for i in 0 ..< count {
             let av = i < aParts.count ? aParts[i] : 0
             let bv = i < bParts.count ? bParts[i] : 0
             if av > bv { return true }
@@ -347,9 +347,9 @@ private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelega
     }
 
     func urlSession(
-        _ session: URLSession,
-        downloadTask: URLSessionDownloadTask,
-        didWriteData bytesWritten: Int64,
+        _: URLSession,
+        downloadTask _: URLSessionDownloadTask,
+        didWriteData _: Int64,
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
@@ -358,6 +358,6 @@ private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelega
         onProgress(min(progress, 1.0))
     }
 
-    // Required but unused — the completion handler on the task handles this
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {}
+    /// Required but unused — the completion handler on the task handles this
+    func urlSession(_: URLSession, downloadTask _: URLSessionDownloadTask, didFinishDownloadingTo _: URL) {}
 }

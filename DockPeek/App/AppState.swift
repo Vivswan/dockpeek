@@ -9,11 +9,11 @@ final class AppState: ObservableObject {
     @AppStorage("launchAtLogin") var launchAtLogin = false
     @AppStorage("forceNewWindowsToPrimary") var forceNewWindowsToPrimary = false
     @AppStorage("previewOnHover") var previewOnHover = false
-    @AppStorage("hoverDelay") var hoverDelay: Double = 0.5
+    @AppStorage("hoverDelay") var hoverDelay = 0.5
     @AppStorage("excludedBundleIDs") var excludedBundleIDsRaw = "" {
         didSet { cachedExcludedBundleIDs = Self.parseExcludedIDs(excludedBundleIDsRaw) }
     }
-    @AppStorage("appLanguage") var language: String = "en"
+    @AppStorage("appLanguage") var language = "en"
     @AppStorage("autoUpdateEnabled") var autoUpdateEnabled = true
     @AppStorage("updateCheckInterval") var updateCheckInterval = "daily" // "daily", "weekly", "manual"
     @AppStorage("showSnapButtons") var showSnapButtons = true

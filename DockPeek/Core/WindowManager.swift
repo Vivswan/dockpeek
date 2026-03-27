@@ -1,7 +1,7 @@
 import AppKit
 import ScreenCaptureKit
 
-// Private/deprecated API wrappers loaded at runtime via dlsym
+/// Private/deprecated API wrappers loaded at runtime via dlsym
 private let skylight = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY)
 
 private typealias SLPSSetFrontFn = @convention(c) (UnsafeMutablePointer<ProcessSerialNumber>, UInt32, UInt32) -> CGError
@@ -162,7 +162,7 @@ final class WindowManager {
             let isOnScreen = info[kCGWindowIsOnscreen as String] as? Bool ?? false
 
             // Skip off-screen / hidden windows unless includeMinimized is set
-            if !isOnScreen && !includeMinimized { continue }
+            if !isOnScreen, !includeMinimized { continue }
 
             let title = info[kCGWindowName as String] as? String ?? ""
             let ownerName = info[kCGWindowOwnerName as String] as? String ?? ""
@@ -238,7 +238,7 @@ final class WindowManager {
 
     /// Returns a cached thumbnail synchronously, or nil on cache miss.
     /// This is the fast path — no async work, no capture.
-    func thumbnail(for windowID: CGWindowID, maxSize: CGFloat = 200) -> NSImage? {
+    func thumbnail(for windowID: CGWindowID, maxSize _: CGFloat = 200) -> NSImage? {
         let effectiveTTL = isPreviewVisible ? extendedCacheTTL : cacheTTL
 
         stateLock.lock()
@@ -282,7 +282,7 @@ final class WindowManager {
 
             // Refresh SCWindow lookup table if stale
             do {
-                try await self.refreshSCWindowsIfNeeded()
+                try await refreshSCWindowsIfNeeded()
             } catch {
                 dpLog("SCShareableContent refresh failed: \(error)")
                 await MainActor.run { completion([:]) }
@@ -290,15 +290,15 @@ final class WindowManager {
             }
 
             // Resolve SCWindow objects for requested window IDs
-            var windowMap = self.resolveWindows(windowIDs)
+            var windowMap = resolveWindows(windowIDs)
 
             // If any windows are missing, force-refresh and retry once
             if windowMap.count < windowIDs.count {
-                self.invalidateSCWindows()
+                invalidateSCWindows()
                 do {
-                    try await self.refreshSCWindowsIfNeeded()
+                    try await refreshSCWindowsIfNeeded()
                 } catch {}
-                windowMap = self.resolveWindows(windowIDs)
+                windowMap = resolveWindows(windowIDs)
             }
 
             // Capture all windows concurrently
@@ -359,8 +359,11 @@ final class WindowManager {
         let ww = CGFloat(scWindow.frame.width)
         let wh = CGFloat(scWindow.frame.height)
         guard ww > 0, wh > 0 else {
-            throw NSError(domain: "DockPeek", code: -1,
-                          userInfo: [NSLocalizedDescriptionKey: "Window has zero size"])
+            throw NSError(
+                domain: "DockPeek",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Window has zero size"]
+            )
         }
         let aspect = ww / wh
         let logicalW: CGFloat
@@ -372,7 +375,7 @@ final class WindowManager {
             logicalW = maxSize * aspect
             logicalH = maxSize
         }
-        config.width  = max(1, Int(logicalW * scale))
+        config.width = max(1, Int(logicalW * scale))
         config.height = max(1, Int(logicalH * scale))
 
         let cgImage = try await SCScreenshotManager.captureImage(
@@ -396,8 +399,8 @@ final class WindowManager {
             }
 
             do {
-                try await self.refreshSCWindowsIfNeeded()
-                guard let scWindow = self.resolveWindows([windowID]).first?.1 else {
+                try await refreshSCWindowsIfNeeded()
+                guard let scWindow = resolveWindows([windowID]).first?.1 else {
                     await MainActor.run { completion(nil) }
                     return
                 }
@@ -407,7 +410,7 @@ final class WindowManager {
                 config.showsCursor = false
                 config.captureResolution = .best
                 // Request pixels matching the overlay size at 2× for Retina
-                config.width  = max(1, Int(bounds.width * 2))
+                config.width = max(1, Int(bounds.width * 2))
                 config.height = max(1, Int(bounds.height * 2))
 
                 let cgImage = try await SCScreenshotManager.captureImage(
@@ -589,14 +592,13 @@ final class WindowManager {
         let vis = screen.visibleFrame
         let cgY = primaryH - vis.maxY
 
-        var targetRect: CGRect
-        switch position {
+        var targetRect = switch position {
         case .left:
-            targetRect = CGRect(x: vis.minX, y: cgY, width: vis.width / 2, height: vis.height)
+            CGRect(x: vis.minX, y: cgY, width: vis.width / 2, height: vis.height)
         case .right:
-            targetRect = CGRect(x: vis.midX, y: cgY, width: vis.width / 2, height: vis.height)
+            CGRect(x: vis.midX, y: cgY, width: vis.width / 2, height: vis.height)
         case .fill:
-            targetRect = CGRect(x: vis.minX, y: cgY, width: vis.width, height: vis.height)
+            CGRect(x: vis.minX, y: cgY, width: vis.width, height: vis.height)
         }
 
         var pos = targetRect.origin

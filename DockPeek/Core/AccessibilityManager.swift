@@ -11,7 +11,7 @@ final class AccessibilityManager {
     func openAccessibilitySettings() {
         let candidates = [
             "x-apple.systemsettings:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
         ]
         for urlString in candidates {
             if let url = URL(string: urlString),

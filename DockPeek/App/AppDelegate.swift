@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
 
     // MARK: - Lifecycle
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    func applicationDidFinishLaunching(_: Notification) {
         // Create controllers
         hoverController = HoverPreviewController(
             appState: appState,
@@ -78,14 +78,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
         hoverController.observeHoverSetting()
 
         // Auto-check for updates (respects cooldown, interval, and user setting)
-        if appState.autoUpdateEnabled && appState.updateCheckInterval != "manual" {
+        if appState.autoUpdateEnabled, appState.updateCheckInterval != "manual" {
             updateChecker.check(force: false, intervalSetting: appState.updateCheckInterval) { [weak self] available in
                 if available { self?.notifyUpdateAvailable() }
             }
         }
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
+    func applicationWillTerminate(_: Notification) {
         eventTapManager.stop()
         hoverController.tearDown()
         screenEnforcer.tearDown()
@@ -94,7 +94,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
         if let m = cmdCommaMonitor { NSEvent.removeMonitor(m) }
 
         NotificationCenter.default.removeObserver(
-            self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
+            self, name: NSApplication.didChangeScreenParametersNotification, object: nil
+        )
     }
 
     // MARK: - Status Item
@@ -102,8 +103,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "macwindow.on.rectangle",
-                                   accessibilityDescription: "DockPeek")
+            button.image = NSImage(
+                systemSymbolName: "macwindow.on.rectangle",
+                accessibilityDescription: "DockPeek"
+            )
             button.action = #selector(showMenu)
             button.target = self
         }
@@ -196,7 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
                         toolbarIcon: NSImage(systemSymbolName: "info.circle", accessibilityDescription: nil)!
                     ) {
                         AboutSettingsPane()
-                    },
+                    }
                 ],
                 animated: true
             )
@@ -259,11 +262,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
             [weak self] timer in
             guard let self else { timer.invalidate(); return }
             if AccessibilityManager.shared.isAccessibilityGranted {
-                self.startEventTap()
-                if self.appState.previewOnHover { self.hoverController.startHoverMonitor() }
+                startEventTap()
+                if appState.previewOnHover { hoverController.startHoverMonitor() }
                 timer.invalidate()
-                self.accessibilityTimer = nil
-                self.startPermissionMonitor()
+                accessibilityTimer = nil
+                startPermissionMonitor()
             }
         }
     }
@@ -298,18 +301,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
             guard let self else { timer.invalidate(); return }
             if !AccessibilityManager.shared.isAccessibilityGranted {
                 dpLog("Permission revoked — stopping event tap")
-                self.eventTapManager.stop()
-                self.hoverController.stopHoverMonitor()
+                eventTapManager.stop()
+                hoverController.stopHoverMonitor()
                 timer.invalidate()
-                self.permissionMonitorTimer = nil
-                self.startAccessibilityPolling()
+                permissionMonitorTimer = nil
+                startAccessibilityPolling()
             }
         }
     }
 
     // MARK: - EventTapManagerDelegate
 
-    func eventTapManager(_ manager: EventTapManager, didDetectClickAt point: CGPoint) -> Bool {
+    func eventTapManager(_: EventTapManager, didDetectClickAt point: CGPoint) -> Bool {
         guard appState.isEnabled else { return false }
 
         // Cancel any pending hover/dismiss timers on click

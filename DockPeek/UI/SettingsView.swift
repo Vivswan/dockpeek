@@ -65,7 +65,7 @@ struct GeneralSettingsPane: View {
                         .fill(AccessibilityManager.shared.isAccessibilityGranted ? Color.green : Color.red)
                         .frame(width: 8, height: 8)
                     Text(AccessibilityManager.shared.isAccessibilityGranted
-                         ? L10n.accessibilityGranted : L10n.accessibilityRequired)
+                        ? L10n.accessibilityGranted : L10n.accessibilityRequired)
                         .font(.caption).foregroundColor(.secondary)
                     if !AccessibilityManager.shared.isAccessibilityGranted {
                         Button(L10n.grantPermission) { AccessibilityManager.shared.openAccessibilitySettings() }
@@ -78,7 +78,7 @@ struct GeneralSettingsPane: View {
                         .fill(screenRecordingOK ? Color.green : Color.red)
                         .frame(width: 8, height: 8)
                     Text(screenRecordingOK
-                         ? L10n.screenRecordingGranted : L10n.screenRecordingRequired)
+                        ? L10n.screenRecordingGranted : L10n.screenRecordingRequired)
                         .font(.caption).foregroundColor(.secondary)
                 }
                 .onAppear { screenRecordingOK = DiagnosticChecker.isScreenRecordingEffective }
@@ -126,7 +126,7 @@ struct GeneralSettingsPane: View {
                         }
                     }
                 }
-            case .downloading(let progress):
+            case let .downloading(progress):
                 VStack(alignment: .leading, spacing: 4) {
                     ProgressView(value: progress)
                     Text(L10n.upgrading).font(.caption).foregroundColor(.secondary)
@@ -138,7 +138,7 @@ struct GeneralSettingsPane: View {
                     Spacer()
                     Button(L10n.restart) { updateChecker.relaunchApp() }
                 }
-            case .failed(let msg):
+            case let .failed(msg):
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Image(systemName: "xmark.circle.fill").foregroundColor(.red)
@@ -175,7 +175,7 @@ struct AppearanceSettingsPane: View {
 
             Settings.Section(bottomDivider: true, label: { Text(L10n.hoverDelay) }) {
                 HStack {
-                    Slider(value: $appState.hoverDelay, in: 0.05...2.0, step: 0.05)
+                    Slider(value: $appState.hoverDelay, in: 0.05 ... 2.0, step: 0.05)
                         .frame(width: 200)
                     Text("\(Int(appState.hoverDelay * 1000))ms")
                         .font(.caption).foregroundColor(.secondary)
@@ -193,7 +193,7 @@ struct AppearanceSettingsPane: View {
 
             Settings.Section(bottomDivider: true, label: { Text(L10n.thumbnailSize) }) {
                 HStack {
-                    Slider(value: $appState.thumbnailSize, in: 120...360, step: 20)
+                    Slider(value: $appState.thumbnailSize, in: 120 ... 360, step: 20)
                         .frame(width: 200)
                     Text("\(Int(appState.thumbnailSize))px")
                         .font(.caption).foregroundColor(.secondary)

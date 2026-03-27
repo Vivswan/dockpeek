@@ -31,24 +31,36 @@ final class PrimaryScreenEnforcer {
         let savedCG = CGPoint(x: savedCocoa.x, y: pH - savedCocoa.y)
         let primaryCenter = CGPoint(x: primary.frame.midX, y: pH / 2)
 
-        let primaryCG = CGRect(x: primary.frame.minX, y: pH - primary.frame.maxY,
-                               width: primary.frame.width, height: primary.frame.height)
+        let primaryCG = CGRect(
+            x: primary.frame.minX,
+            y: pH - primary.frame.maxY,
+            width: primary.frame.width,
+            height: primary.frame.height
+        )
         if primaryCG.contains(savedCG) { return }
 
         dpLog("Warping cursor to primary center for window placement")
 
         CGWarpMouseCursorPosition(primaryCenter)
 
-        if let moveEvent = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved,
-                                   mouseCursorPosition: primaryCenter, mouseButton: .left) {
+        if let moveEvent = CGEvent(
+            mouseEventSource: nil,
+            mouseType: .mouseMoved,
+            mouseCursorPosition: primaryCenter,
+            mouseButton: .left
+        ) {
             moveEvent.post(tap: .cghidEventTap)
         }
 
         cursorRestoreTask?.cancel()
         let task = DispatchWorkItem {
             CGWarpMouseCursorPosition(savedCG)
-            if let restoreEvent = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved,
-                                          mouseCursorPosition: savedCG, mouseButton: .left) {
+            if let restoreEvent = CGEvent(
+                mouseEventSource: nil,
+                mouseType: .mouseMoved,
+                mouseCursorPosition: savedCG,
+                mouseButton: .left
+            ) {
                 restoreEvent.post(tap: .cghidEventTap)
             }
         }
@@ -148,7 +160,8 @@ final class PrimaryScreenEnforcer {
 
     func tearDown() {
         NSWorkspace.shared.notificationCenter.removeObserver(
-            self, name: NSWorkspace.didLaunchApplicationNotification, object: nil)
+            self, name: NSWorkspace.didLaunchApplicationNotification, object: nil
+        )
         for pid in axObservers.keys {
             removeAXObserver(pid: pid)
         }
@@ -165,8 +178,12 @@ private func moveAXWindowToPrimaryIfNeeded(_ axWindow: AXUIElement) {
     guard let primary = NSScreen.screens.first else { return }
     let pH = primary.frame.height
     let vis = primary.visibleFrame
-    let primaryCG = CGRect(x: primary.frame.minX, y: pH - primary.frame.maxY,
-                           width: primary.frame.width, height: primary.frame.height)
+    let primaryCG = CGRect(
+        x: primary.frame.minX,
+        y: pH - primary.frame.maxY,
+        width: primary.frame.width,
+        height: primary.frame.height
+    )
 
     var posRef: AnyObject?
     AXUIElementCopyAttributeValue(axWindow, kAXPositionAttribute as CFString, &posRef)

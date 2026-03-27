@@ -5,7 +5,9 @@ final class DockAXInspector {
     private var dockElement: AXUIElement?
     private var dockPID: pid_t = 0
 
-    init() { refreshDockReference() }
+    init() {
+        refreshDockReference()
+    }
 
     func refreshDockReference() {
         guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else {
@@ -52,7 +54,7 @@ final class DockAXInspector {
 
         if let urlRef = axValue(dockItem, kAXURLAttribute),
            CFGetTypeID(urlRef as CFTypeRef) == CFURLGetTypeID() {
-            let cfURL = urlRef as! CFURL  // Safe: CFTypeID already verified above
+            let cfURL = urlRef as! CFURL // Safe: CFTypeID already verified above
             bundleID = Bundle(url: cfURL as URL)?.bundleIdentifier
         }
 
@@ -87,7 +89,7 @@ final class DockAXInspector {
 
     private func findDockItem(from element: AXUIElement) -> AXUIElement? {
         var current = element
-        for _ in 0..<5 {
+        for _ in 0 ..< 5 {
             if let role = axString(current, kAXRoleAttribute), role == "AXDockItem" {
                 return current
             }
@@ -95,7 +97,7 @@ final class DockAXInspector {
             guard AXUIElementCopyAttributeValue(current, kAXParentAttribute as CFString, &parent) == .success,
                   let parentRef = parent,
                   CFGetTypeID(parentRef) == AXUIElementGetTypeID() else { break }
-            current = parentRef as! AXUIElement  // Safe: CFTypeID already verified above
+            current = parentRef as! AXUIElement // Safe: CFTypeID already verified above
         }
         return nil
     }

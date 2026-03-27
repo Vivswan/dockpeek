@@ -1,0 +1,57 @@
+# DockPeek SwiftFormat Configuration
+
+# Swift version
+--swiftversion 5.9
+
+# Excluded paths
+--exclude DockPeek/Vendor,build,DerivedData
+
+# Indentation
+--indent 4
+--tabwidth 4
+--smarttabs disabled
+--indentcase false
+--ifdef indent
+
+# Braces
+--allman false
+
+# Wrapping
+--wraparguments before-first
+--wrapparameters before-first
+--wrapcollections before-first
+--wrapconditions after-first
+--wrapreturntype preserve
+--maxwidth 140
+
+# Spacing
+--operatorfunc spaced
+--ranges spaced
+--trimwhitespace always
+
+# Types
+--self remove
+--importgrouping alpha
+--commas inline
+
+# Semicolons
+--semicolons inline
+
+# Void
+--voidtype void
+
+# Marks
+--markextensions always
+
+# Redundancy
+--redundanttype inferred
+
+# Rules to disable (would cause unwanted churn or conflict with existing patterns)
+--disable acronyms           # Existing: CGWindowID, AXUIElement, etc. — don't rename
+--disable blankLinesBetweenScopes  # Existing style doesn't always blank between scopes
+--disable wrapMultilineStatementBraces  # Conflicts with existing brace style
+--disable sortImports        # Could reorder in ways that break grouped imports
+--disable wrapPropertyBodies # Keep single-line computed properties compact (L10n.swift etc.)
+--disable preferKeyPath      # Keep explicit closures for clarity
+--disable blankLinesAtStartOfScope  # Don't enforce blank line removal at scope start
+--disable blankLinesAtEndOfScope    # Don't enforce blank line removal at scope end

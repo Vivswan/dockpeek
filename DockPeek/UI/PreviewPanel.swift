@@ -3,7 +3,9 @@ import SwiftUI
 
 final class PreviewNavState: ObservableObject {
     @Published var selectedIndex: Int = -1
-    func reset() { selectedIndex = -1 }
+    func reset() {
+        selectedIndex = -1
+    }
 }
 
 /// Observable data source for the preview panel's window list.
@@ -65,7 +67,7 @@ final class PreviewPanel: NSPanel {
         onDismiss: @escaping () -> Void,
         onHoverWindow: @escaping (WindowInfo?) -> Void = { _ in }
     ) {
-        dismissGeneration &+= 1  // Invalidate any pending deferred cleanup
+        dismissGeneration &+= 1 // Invalidate any pending deferred cleanup
         storedWindows = windows
         storedOnSelect = onSelect
         storedOnClose = onClose
@@ -92,7 +94,7 @@ final class PreviewPanel: NSPanel {
             onHoverWindow: onHoverWindow,
             navState: navState
         )
-        contentView = nil  // Release old hosting view before creating new one
+        contentView = nil // Release old hosting view before creating new one
         let hosting = NSHostingView(rootView: AnyView(content))
         contentView = hosting
 
@@ -132,17 +134,17 @@ final class PreviewPanel: NSPanel {
         removeDismissMonitors()
         let gen = dismissGeneration
         if animated {
-            NSAnimationContext.runAnimationGroup({ ctx in
+            NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.12
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
                 self.animator().alphaValue = 0
-            }, completionHandler: {
+            } completionHandler: {
                 // Skip cleanup if showPreview was called during the animation
                 guard self.dismissGeneration == gen else { return }
                 self.orderOut(nil)
                 self.alphaValue = 1
                 self.clearStoredState()
-            })
+            }
         } else {
             orderOut(nil)
             // Defer cleanup to let current call stack (e.g. onSelect gesture) complete.
@@ -180,15 +182,13 @@ final class PreviewPanel: NSPanel {
         let nsY = primaryH - nearPoint.y
 
         let dockPos = detectDockPosition(screen: screen)
-        var origin: NSPoint
-
-        switch dockPos {
+        var origin = switch dockPos {
         case .bottom:
-            origin = NSPoint(x: nearPoint.x - size.width / 2, y: screenFrame.minY + 8)
+            NSPoint(x: nearPoint.x - size.width / 2, y: screenFrame.minY + 8)
         case .left:
-            origin = NSPoint(x: screenFrame.minX + 8, y: nsY - size.height / 2)
+            NSPoint(x: screenFrame.minX + 8, y: nsY - size.height / 2)
         case .right:
-            origin = NSPoint(x: screenFrame.maxX - size.width - 8, y: nsY - size.height / 2)
+            NSPoint(x: screenFrame.maxX - size.width - 8, y: nsY - size.height / 2)
         }
 
         // Clamp to visible area
@@ -223,30 +223,30 @@ final class PreviewPanel: NSPanel {
 
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
             [weak self] _ in
-            guard let self, self.isVisible else { return }
+            guard let self, isVisible else { return }
             onDismiss()
         }
 
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) {
             [weak self] event in
-            guard let self, self.isVisible else { return event }
+            guard let self, isVisible else { return event }
             if event.type == .keyDown {
                 switch event.keyCode {
                 case 53: // Esc
                     onDismiss(); return nil
                 case 123: // Left arrow
-                    let idx = self.navState.selectedIndex
-                    self.navState.selectedIndex = idx <= 0 ? 0 : idx - 1
+                    let idx = navState.selectedIndex
+                    navState.selectedIndex = idx <= 0 ? 0 : idx - 1
                     return nil
                 case 124: // Right arrow
-                    let idx = self.navState.selectedIndex
-                    let max = self.storedWindows.count - 1
-                    self.navState.selectedIndex = idx < 0 ? 0 : min(idx + 1, max)
+                    let idx = navState.selectedIndex
+                    let max = storedWindows.count - 1
+                    navState.selectedIndex = idx < 0 ? 0 : min(idx + 1, max)
                     return nil
                 case 36: // Enter
-                    let idx = self.navState.selectedIndex
-                    if idx >= 0, idx < self.storedWindows.count {
-                        self.storedOnSelect?(self.storedWindows[idx])
+                    let idx = navState.selectedIndex
+                    if idx >= 0, idx < storedWindows.count {
+                        storedOnSelect?(storedWindows[idx])
                     }
                     return nil
                 default: break

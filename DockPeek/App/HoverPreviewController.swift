@@ -21,8 +21,8 @@ final class HoverPreviewController {
 
     private var hoverPollTimer: DispatchSourceTimer?
     private var currentPollInterval: TimeInterval = idlePollInterval
-    private static let idlePollInterval: TimeInterval = 0.25    // 4 Hz
-    private static let activePollInterval: TimeInterval = 0.066  // ~15 Hz
+    private static let idlePollInterval: TimeInterval = 0.25 // 4 Hz
+    private static let activePollInterval: TimeInterval = 0.066 // ~15 Hz
 
     private(set) var cachedDockRect: CGRect = .zero
     var previewIsVisible = false {
@@ -48,11 +48,13 @@ final class HoverPreviewController {
 
     // MARK: - Init
 
-    init(appState: AppState,
-         dockInspector: DockAXInspector,
-         windowManager: WindowManager,
-         previewPanel: PreviewPanel,
-         highlightOverlay: HighlightOverlay) {
+    init(
+        appState: AppState,
+        dockInspector: DockAXInspector,
+        windowManager: WindowManager,
+        previewPanel: PreviewPanel,
+        highlightOverlay: HighlightOverlay
+    ) {
         self.appState = appState
         self.dockInspector = dockInspector
         self.windowManager = windowManager
@@ -73,12 +75,12 @@ final class HoverPreviewController {
             .sink { [weak self] enabled in
                 guard let self else { return }
                 if enabled {
-                    if self.hoverPollTimer == nil,
+                    if hoverPollTimer == nil,
                        AccessibilityManager.shared.isAccessibilityGranted {
-                        self.startHoverMonitor()
+                        startHoverMonitor()
                     }
                 } else {
-                    self.stopHoverMonitor()
+                    stopHoverMonitor()
                 }
             }
     }
@@ -89,8 +91,10 @@ final class HoverPreviewController {
 
         currentPollInterval = Self.idlePollInterval
         let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + currentPollInterval,
-                       repeating: currentPollInterval)
+        timer.schedule(
+            deadline: .now() + currentPollInterval,
+            repeating: currentPollInterval
+        )
         timer.setEventHandler { [weak self] in
             self?.pollMousePosition()
         }
@@ -196,15 +200,15 @@ final class HoverPreviewController {
                     let task = DispatchWorkItem { [weak self] in
                         guard let self else { return }
                         let currentLoc = NSEvent.mouseLocation
-                        if self.previewPanel.isVisible, self.previewPanel.frame.contains(currentLoc) {
-                            self.hoverDismissTimer = nil
+                        if previewPanel.isVisible, previewPanel.frame.contains(currentLoc) {
+                            hoverDismissTimer = nil
                             return
                         }
-                        self.lastHoveredBundleID = nil
-                        self.hoverDismissTimer = nil
-                        self.previewIsVisible = false
-                        self.highlightOverlay.hide()
-                        self.previewPanel.dismissPanel()
+                        lastHoveredBundleID = nil
+                        hoverDismissTimer = nil
+                        previewIsVisible = false
+                        highlightOverlay.hide()
+                        previewPanel.dismissPanel()
                     }
                     hoverDismissTimer = task
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: task)

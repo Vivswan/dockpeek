@@ -5,15 +5,15 @@ enum Language: String, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .en: return "English"
-        case .ko: return "한국어"
+        case .en: "English"
+        case .ko: "한국어"
         }
     }
 }
 
 /// Localization helper that loads strings from .lproj bundles based on the
 /// user's in-app language setting. Falls back to the key if no translation found.
-struct L10n {
+enum L10n {
     static var current: Language {
         Language(rawValue: UserDefaults.standard.string(forKey: "appLanguage") ?? "en") ?? .en
     }
@@ -33,21 +33,25 @@ struct L10n {
     }
 
     // MARK: - Menu
+
     static var settings: String { s("settings") }
     static var aboutDockPeek: String { s("aboutDockPeek") }
     static var quitDockPeek: String { s("quitDockPeek") }
 
     // MARK: - Tabs
+
     static var general: String { s("general") }
     static var appearance: String { s("appearance") }
     static var about: String { s("about") }
 
     // MARK: - General
+
     static var enableDockPeek: String { s("enableDockPeek") }
     static var launchAtLogin: String { s("launchAtLogin") }
     static var language: String { s("language") }
 
     // MARK: - Behavior
+
     static var previewOnHover: String { s("previewOnHover") }
     static var hoverDelay: String { s("hoverDelay") }
     static var livePreviewOnHover: String { s("livePreviewOnHover") }
@@ -58,6 +62,7 @@ struct L10n {
     static var thumbnailSize: String { s("thumbnailSize") }
 
     // MARK: - Permissions
+
     static var permissions: String { s("permissions") }
     static var accessibilityGranted: String { s("accessibilityGranted") }
     static var accessibilityRequired: String { s("accessibilityRequired") }
@@ -68,6 +73,7 @@ struct L10n {
     static var diagnosticsCopied: String { s("diagnosticsCopied") }
 
     // MARK: - Updates
+
     static var checkForUpdates: String { s("checkForUpdates") }
     static var updateAvailable: String { s("updateAvailable") }
     static var updateMessage: String { s("updateMessage") }
@@ -97,6 +103,7 @@ struct L10n {
     static var retry: String { s("retry") }
 
     // MARK: - About
+
     static var version: String { s("version") }
     static var buyMeACoffee: String { s("buyMeACoffee") }
     static var buyMeACoffeeDesc: String { s("buyMeACoffeeDesc") }
@@ -104,14 +111,17 @@ struct L10n {
     static var quit: String { s("quit") }
 
     // MARK: - Excluded Apps
+
     static var excludedApps: String { s("excludedApps") }
     static var addPlaceholder: String { s("addPlaceholder") }
     static var add: String { s("add") }
 
     // MARK: - Preview
+
     static var minimized: String { s("minimized") }
 
     // MARK: - Onboarding
+
     static var onboardingTitle: String { s("onboardingTitle") }
     static var onboardingBody: String { s("onboardingBody") }
     static var onboardingStep1: String { s("onboardingStep1") }

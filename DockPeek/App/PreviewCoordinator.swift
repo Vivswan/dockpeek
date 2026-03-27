@@ -17,10 +17,12 @@ final class PreviewCoordinator {
 
     private var previewGeneration: UInt = 0
 
-    init(appState: AppState,
-         windowManager: WindowManager,
-         previewPanel: PreviewPanel,
-         highlightOverlay: HighlightOverlay) {
+    init(
+        appState: AppState,
+        windowManager: WindowManager,
+        previewPanel: PreviewPanel,
+        highlightOverlay: HighlightOverlay
+    ) {
         self.appState = appState
         self.windowManager = windowManager
         self.previewPanel = previewPanel
@@ -43,13 +45,13 @@ final class PreviewCoordinator {
         var enriched = windows
 
         windowManager.captureThumbnails(for: allIDs, maxSize: thumbSize) { [weak self] results in
-            guard let self, self.previewPanel.isVisible, self.previewGeneration == generation else { return }
+            guard let self, previewPanel.isVisible, previewGeneration == generation else { return }
             for i in enriched.indices {
                 if let img = results[enriched[i].id] {
                     enriched[i].thumbnail = img
                 }
             }
-            self.previewPanel.updateThumbnails(enriched)
+            previewPanel.updateThumbnails(enriched)
         }
 
         previewPanel.showPreview(
@@ -88,17 +90,17 @@ final class PreviewCoordinator {
                 self?.previewPanel.dismissPanel()
             },
             onHoverWindow: { [weak self] (win: WindowInfo?) in
-                guard let self, self.appState.livePreviewOnHover else { return }
+                guard let self, appState.livePreviewOnHover else { return }
                 if let win {
-                    self.highlightOverlay.show(for: win)
+                    highlightOverlay.show(for: win)
                     let hoveredID = win.id
-                    self.windowManager.captureOverlayImage(for: win.id, bounds: win.bounds) { [weak self] image in
+                    windowManager.captureOverlayImage(for: win.id, bounds: win.bounds) { [weak self] image in
                         guard let self, let image else { return }
-                        guard self.highlightOverlay.currentID == hoveredID else { return }
-                        self.highlightOverlay.updateImage(image)
+                        guard highlightOverlay.currentID == hoveredID else { return }
+                        highlightOverlay.updateImage(image)
                     }
                 } else {
-                    self.highlightOverlay.hide()
+                    highlightOverlay.hide()
                 }
             }
         )

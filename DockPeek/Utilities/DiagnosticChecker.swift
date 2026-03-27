@@ -39,7 +39,10 @@ enum DiagnosticChecker {
         // Dock area detection — use shared helper
         let dockRect = DockRectDetector.detectDockRect(autoHide: autoHide, orientation: orientation)
         if dockRect != .zero {
-            lines.append("Dock Area: \(Int(dockRect.width))x\(Int(dockRect.height)) at (\(Int(dockRect.origin.x)),\(Int(dockRect.origin.y)))")
+            lines
+                .append(
+                    "Dock Area: \(Int(dockRect.width))x\(Int(dockRect.height)) at (\(Int(dockRect.origin.x)),\(Int(dockRect.origin.y)))"
+                )
         } else {
             lines.append("Dock Area: NOT DETECTED")
         }
@@ -57,8 +60,8 @@ enum DiagnosticChecker {
             let f = screen.frame
             let v = screen.visibleFrame
             lines.append("Screen \(i): \(Int(f.width))x\(Int(f.height))"
-                         + " visible=\(Int(v.width))x\(Int(v.height))"
-                         + " gap(B=\(Int(v.minY - f.minY)),L=\(Int(v.minX - f.minX)),R=\(Int(f.maxX - v.maxX)))")
+                + " visible=\(Int(v.width))x\(Int(v.height))"
+                + " gap(B=\(Int(v.minY - f.minY)),L=\(Int(v.minX - f.minX)),R=\(Int(f.maxX - v.maxX)))")
         }
 
         return Report(lines: lines)
@@ -99,7 +102,7 @@ enum DiagnosticChecker {
             }
         }
 
-        if finderWindowCount > 0 && hasName {
+        if finderWindowCount > 0, hasName {
             return "OK (\(finderWindowCount) Finder windows, names visible)"
         } else if finderWindowCount > 0 {
             return "OK (\(finderWindowCount) Finder windows, names restricted — restart app to fully apply)"
@@ -192,7 +195,12 @@ enum DockRectDetector {
                     let cgTop = pH - full.maxY
                     dockZone = CGRect(x: full.maxX - autoHideDetectionSize, y: cgTop, width: autoHideDetectionSize, height: full.height)
                 default: // "bottom"
-                    dockZone = CGRect(x: full.minX, y: pH - full.minY - autoHideDetectionSize, width: full.width, height: autoHideDetectionSize)
+                    dockZone = CGRect(
+                        x: full.minX,
+                        y: pH - full.minY - autoHideDetectionSize,
+                        width: full.width,
+                        height: autoHideDetectionSize
+                    )
                 }
             }
 

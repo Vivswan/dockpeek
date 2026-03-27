@@ -136,17 +136,49 @@ DockPeek/
     ├── UpdateChecker.swift        # Auto-update: check, download, install, rollback
     ├── DiagnosticChecker.swift    # System diagnostics + DockRectDetector
     └── DebugLog.swift             # Debug-only logging
+
+hooks/
+└── pre-commit                     # Pre-commit: lint + format check
+
+.swiftlint.yml                     # SwiftLint configuration
+.swiftformat                       # SwiftFormat configuration
+Makefile                           # Build, dev workflow, code quality targets
 ```
 
 ## Development
 
 ```bash
+# Workflow
 make setup      # First time: build → install to /Applications → launch
 make dev        # Dev loop: swap binary in-place (permissions preserved)
 make kill       # Stop running DockPeek
 make dist       # Build release zip for distribution
 make clean      # Remove build artifacts
+
+# Code quality
+make lint       # Run SwiftLint (report only)
+make lint-fix   # Auto-fix lint issues
+make format     # Auto-format with SwiftFormat
+make check      # Run all checks (lint + format)
+
+# Setup
+make hooks      # Install pre-commit hook (lint + format on staged files)
 ```
+
+### Code Quality Tools
+
+Install [SwiftLint](https://github.com/realm/SwiftLint) and [SwiftFormat](https://github.com/nicklockwood/SwiftFormat):
+
+```bash
+brew install swiftlint swiftformat
+make hooks   # activate pre-commit hook
+```
+
+- **SwiftLint** — catches common Swift issues and enforces style (config: `.swiftlint.yml`)
+- **SwiftFormat** — auto-formats code to a consistent style (config: `.swiftformat`)
+- **Pre-commit hook** — runs both tools on staged `.swift` files before each commit; soft-fails if tools aren't installed
+
+> SwiftLint requires Xcode.app (not just Command Line Tools). If you see SourceKit errors, run `sudo xcode-select -s /Applications/Xcode.app`.
 
 ## Known Limitations
 

@@ -68,7 +68,7 @@ struct PreviewContentView: View {
                         )
                 )
                 .overlay(alignment: .topLeading) {
-                    if highlighted && showCloseButton {
+                    if highlighted, showCloseButton {
                         let closeHovered = closeHoveredID == w.id
                         Button {
                             onClose(w)
@@ -93,7 +93,7 @@ struct PreviewContentView: View {
                     }
                 }
                 .overlay(alignment: .bottom) {
-                    if highlighted && showSnapButtons {
+                    if highlighted, showSnapButtons {
                         HStack(spacing: 6) {
                             snapButton(icon: "rectangle.lefthalf.filled", position: .left, window: w)
                             snapButton(icon: "rectangle.inset.filled", position: .fill, window: w)
@@ -135,7 +135,6 @@ struct PreviewContentView: View {
         .accessibilityLabel(w.displayTitle)
     }
 
-    @ViewBuilder
     private func snapButton(icon: String, position: SnapPosition, window: WindowInfo) -> some View {
         Button {
             onSnap(window, position)
@@ -172,7 +171,7 @@ struct VisualEffectBlur: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     let blendingMode: NSVisualEffectView.BlendingMode
 
-    func makeNSView(context: Context) -> NSVisualEffectView {
+    func makeNSView(context _: Context) -> NSVisualEffectView {
         let v = NSVisualEffectView()
         v.material = material
         v.blendingMode = blendingMode
@@ -180,7 +179,7 @@ struct VisualEffectBlur: NSViewRepresentable {
         return v
     }
 
-    func updateNSView(_ v: NSVisualEffectView, context: Context) {
+    func updateNSView(_ v: NSVisualEffectView, context _: Context) {
         v.material = material
         v.blendingMode = blendingMode
     }

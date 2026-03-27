@@ -12,7 +12,7 @@ SIGN_ID     := DockPeek Development
 INSTALL_APP := /Applications/$(APP_NAME).app
 INSTALL_BIN := $(INSTALL_APP)/Contents/MacOS/$(APP_NAME)
 
-.PHONY: build release clean install dev run dist open generate setup kill
+.PHONY: build release clean install dev run dist open generate setup kill lint lint-fix format format-check check hooks
 
 # ============================================================
 # DEVELOPMENT WORKFLOW (recommended)
@@ -21,6 +21,23 @@ INSTALL_BIN := $(INSTALL_APP)/Contents/MacOS/$(APP_NAME)
 #   2. After edits: make dev      (hot-swap binary, no re-grant)
 #   3. Stop:        make kill
 # ============================================================
+
+# --- Shared helpers (called by build targets) ---
+
+# Copy resources into an app bundle: $(call bundle-resources,<bundle-dir>)
+define bundle-resources
+	@cp DockPeek/Info.plist $(1)/Contents/Info.plist
+	@cp DockPeek/Resources/AppIcon.icns $(1)/Contents/Resources/AppIcon.icns
+	@cp -R DockPeek/Resources/en.lproj $(1)/Contents/Resources/
+	@cp -R DockPeek/Resources/ko.lproj $(1)/Contents/Resources/
+endef
+
+# Sign an app bundle: $(call sign-app,<bundle-dir>)
+define sign-app
+	@codesign --force --sign "$(SIGN_ID)" $(1)
+endef
+
+# --- Development workflow ---
 
 # First-time setup: build, install to /Applications, launch
 setup: release
@@ -44,11 +61,8 @@ dev: kill
 		echo "Error: Run 'make setup' first to install DockPeek.app"; exit 1; \
 	fi
 	@cp build/Debug/$(APP_NAME) "$(INSTALL_BIN)"
-	@cp DockPeek/Info.plist "$(INSTALL_APP)/Contents/Info.plist"
-	@cp DockPeek/Resources/AppIcon.icns "$(INSTALL_APP)/Contents/Resources/AppIcon.icns"
-	@cp -R DockPeek/Resources/en.lproj "$(INSTALL_APP)/Contents/Resources/"
-	@cp -R DockPeek/Resources/ko.lproj "$(INSTALL_APP)/Contents/Resources/"
-	@codesign --force --sign "$(SIGN_ID)" "$(INSTALL_APP)"
+	$(call bundle-resources,"$(INSTALL_APP)")
+	$(call sign-app,"$(INSTALL_APP)")
 	@echo "Binary updated. Launching..."
 	@open "$(INSTALL_APP)"
 
@@ -62,11 +76,8 @@ build:
 	@mkdir -p build/Debug/$(APP_NAME).app/Contents/MacOS \
 	          build/Debug/$(APP_NAME).app/Contents/Resources
 	swiftc $(SWIFT_FLAGS) -Onone -g -o build/Debug/$(APP_NAME).app/Contents/MacOS/$(APP_NAME) $(SWIFT_FILES)
-	@cp DockPeek/Info.plist build/Debug/$(APP_NAME).app/Contents/Info.plist
-	@cp DockPeek/Resources/AppIcon.icns build/Debug/$(APP_NAME).app/Contents/Resources/AppIcon.icns
-	@cp -R DockPeek/Resources/en.lproj build/Debug/$(APP_NAME).app/Contents/Resources/
-	@cp -R DockPeek/Resources/ko.lproj build/Debug/$(APP_NAME).app/Contents/Resources/
-	@codesign --force --sign "$(SIGN_ID)" build/Debug/$(APP_NAME).app
+	$(call bundle-resources,build/Debug/$(APP_NAME).app)
+	$(call sign-app,build/Debug/$(APP_NAME).app)
 	@echo "Built: build/Debug/$(APP_NAME).app"
 
 release:
@@ -74,11 +85,8 @@ release:
 	          build/Release/$(APP_NAME).app/Contents/Resources
 	swiftc $(SWIFT_FLAGS) -O -whole-module-optimization \
 		-o build/Release/$(APP_NAME).app/Contents/MacOS/$(APP_NAME) $(SWIFT_FILES)
-	@cp DockPeek/Info.plist build/Release/$(APP_NAME).app/Contents/Info.plist
-	@cp DockPeek/Resources/AppIcon.icns build/Release/$(APP_NAME).app/Contents/Resources/AppIcon.icns
-	@cp -R DockPeek/Resources/en.lproj build/Release/$(APP_NAME).app/Contents/Resources/
-	@cp -R DockPeek/Resources/ko.lproj build/Release/$(APP_NAME).app/Contents/Resources/
-	@codesign --force --sign "$(SIGN_ID)" build/Release/$(APP_NAME).app
+	$(call bundle-resources,build/Release/$(APP_NAME).app)
+	$(call sign-app,build/Release/$(APP_NAME).app)
 	@echo "Built: build/Release/$(APP_NAME).app"
 
 run: build
@@ -97,6 +105,47 @@ install: release
 
 clean:
 	rm -rf build DerivedData DockPeek.xcodeproj $(APP_NAME).zip
+
+# --- Code Quality ---
+# Requires: brew install swiftlint swiftformat
+# Note: SwiftLint requires Xcode.app (not just Command Line Tools).
+#   If you see SourceKit errors, run: sudo xcode-select -s /Applications/Xcode.app
+
+# Lint Swift sources (excludes Vendor/ per .swiftlint.yml)
+lint:
+	@command -v swiftlint >/dev/null 2>&1 || { echo "Install SwiftLint: brew install swiftlint"; exit 1; }
+	swiftlint lint --config .swiftlint.yml
+
+# Lint and auto-fix what can be fixed
+lint-fix:
+	@command -v swiftlint >/dev/null 2>&1 || { echo "Install SwiftLint: brew install swiftlint"; exit 1; }
+	swiftlint lint --fix --config .swiftlint.yml
+	swiftlint lint --config .swiftlint.yml
+
+# Format Swift sources (excludes Vendor/ per .swiftformat)
+format:
+	@command -v swiftformat >/dev/null 2>&1 || { echo "Install SwiftFormat: brew install swiftformat"; exit 1; }
+	swiftformat DockPeek
+
+# Check formatting without modifying files (CI-friendly)
+format-check:
+	@command -v swiftformat >/dev/null 2>&1 || { echo "Install SwiftFormat: brew install swiftformat"; exit 1; }
+	swiftformat --lint DockPeek
+
+# Run all code quality checks (lint + format check)
+check:
+	@echo "=== SwiftLint ==="
+	@$(MAKE) lint
+	@echo ""
+	@echo "=== SwiftFormat ==="
+	@$(MAKE) format-check
+	@echo ""
+	@echo "✅ All checks passed"
+
+# Install git hooks from hooks/ directory
+hooks:
+	git config core.hooksPath hooks
+	@echo "Git hooks installed (using hooks/ directory)"
 
 # --- Xcode project (requires XcodeGen + Xcode.app) ---
 
