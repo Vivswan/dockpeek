@@ -12,7 +12,7 @@ SIGN_ID     := DockPeek Development
 INSTALL_APP := /Applications/$(APP_NAME).app
 INSTALL_BIN := $(INSTALL_APP)/Contents/MacOS/$(APP_NAME)
 
-.PHONY: build release clean install dev run dist open generate setup kill lint lint-fix format format-check check hooks
+.PHONY: build release clean install dev run dist open generate setup kill lint lint-fix format format-check check hooks test
 
 # ============================================================
 # DEVELOPMENT WORKFLOW (recommended)
@@ -105,6 +105,36 @@ install: release
 
 clean:
 	rm -rf build DerivedData DockPeek.xcodeproj $(APP_NAME).zip
+
+# --- Tests ---
+# Compiles all production + test sources with -DTESTING and runs via XCTest.
+# Uses Xcode's toolchain and SDK since XCTest requires the full platform SDK
+# (the Command Line Tools SDK doesn't include the Swift XCTest overlay).
+
+XCODE_DEV     := /Applications/Xcode.app/Contents/Developer
+XCODE_SWIFTC  := $(XCODE_DEV)/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc
+MACOS_PLAT    := $(XCODE_DEV)/Platforms/MacOSX.platform/Developer
+MACOS_SDK     := $(MACOS_PLAT)/SDKs/MacOSX.sdk
+XCTEST_FW     := $(MACOS_PLAT)/Library/Frameworks
+XCTEST_PFW    := $(MACOS_PLAT)/Library/PrivateFrameworks
+XCTEST_LIB    := $(MACOS_PLAT)/usr/lib
+TEST_SOURCES  := $(shell find DockPeek -name '*.swift' -type f) $(shell find Tests -name '*.swift' -type f)
+
+test:
+	@mkdir -p build/Test
+	@echo "Compiling tests..."
+	@$(XCODE_SWIFTC) $(SWIFT_FLAGS) -DTESTING \
+		-sdk $(MACOS_SDK) \
+		-F $(XCTEST_FW) \
+		-F $(XCTEST_PFW) \
+		-I $(XCTEST_LIB) \
+		-L $(XCTEST_LIB) \
+		-Xlinker -rpath -Xlinker $(XCTEST_FW) \
+		-Xlinker -rpath -Xlinker $(XCTEST_PFW) \
+		-Xlinker -rpath -Xlinker $(XCTEST_LIB) \
+		-o build/Test/DockPeekTests $(TEST_SOURCES)
+	@echo "Running tests..."
+	@./build/Test/DockPeekTests
 
 # --- Code Quality ---
 # Requires: brew install swiftlint swiftformat

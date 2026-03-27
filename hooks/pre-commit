@@ -45,4 +45,17 @@ if [ $FAILED -ne 0 ]; then
     exit 1
 fi
 
+# Tests (requires Xcode.app)
+if [ -d "/Applications/Xcode.app" ]; then
+    echo "Running tests..."
+    if make test 2>&1; then
+        true
+    else
+        echo "❌ Tests failed."
+        exit 1
+    fi
+else
+    echo "⚠️  Xcode.app not found — skipping tests"
+fi
+
 echo "✅ Pre-commit checks passed"
