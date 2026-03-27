@@ -12,15 +12,18 @@ Pick the exact window you want — no more cycling through them all.
 - **Window Preview** — Click a Dock icon to see thumbnails of every open window for that app
 - **Single Window Activation** — Click a thumbnail to bring just that window to the front (works with full-screen Spaces too)
 - **Live Preview on Hover** — Hover over a thumbnail to see where the window is on your screen
+- **Preview on Hover** — Optionally show previews by hovering over Dock icons (configurable delay)
 - **Close from Preview** — Hit the X button on a thumbnail to close that window directly
 - **Keyboard Navigation** — Use arrow keys to select windows, Enter to activate, Esc to dismiss
 - **Window Snapping** — Snap windows to left half, right half, or full screen from the preview panel
+- **Auto-Update** — Check for updates automatically (daily/weekly/manual) with one-click install
 - **Settings GUI** — Proper settings window with tabs (General, Appearance, About), accessible via Cmd+, or menu bar
 - **Korean / English** — In-app language switching between English and 한국어
 - **Force Primary Display** — New app windows always open on your primary monitor
 - **Launch at Login** — Start DockPeek automatically when you log in
 - **Safe Permission Handling** — Revoking accessibility permission won't freeze your system
-- **Configurable** — Adjust thumbnail size, toggle window titles, exclude specific apps
+- **Configurable** — Adjust thumbnail size, toggle window titles, toggle close/snap buttons, exclude specific apps
+- **Diagnostics** — Copy diagnostic info for troubleshooting from the About tab
 
 ## Install
 
@@ -75,27 +78,33 @@ Click the menubar icon → **Settings...** (or press **Cmd+,**) to open the sett
 ### General
 - **Enable DockPeek** — Toggle the feature on/off
 - **Launch at login** — Start DockPeek automatically on login
-- **Force new windows to primary display** — New app windows always open on your main monitor
+- **Auto-update** — Check for updates automatically (daily/weekly/manual) with one-click install
 - **Language** — Switch between English and 한국어 (instant, no restart needed)
-- **Permission status** — See whether Accessibility permission is granted
+- **Permission status** — See whether Accessibility and Screen Recording permissions are granted
 
 ### Appearance
-- **Thumbnail size** — Adjust preview size (120–360px)
-- **Show window titles** — Display titles below thumbnails
+- **Preview on hover** — Show previews by hovering over Dock icons
 - **Live preview on hover** — Show overlay at the window's screen position on hover
+- **Hover delay** — Adjust delay before preview appears (50–2000ms)
+- **Show window titles** — Display titles below thumbnails
+- **Show close button** — Toggle the close (X) button on thumbnails
+- **Show snap buttons** — Toggle the snap buttons (left/full/right) on thumbnails
+- **Force new windows to primary display** — New app windows always open on your main monitor
+- **Thumbnail size** — Adjust preview size (120–360px)
+- **Excluded Apps** — Skip specific apps by Bundle ID
 
 ### About
 - App version info
 - **Buy Me a Coffee** — Support development
 - **GitHub** link
-- **Excluded Apps** — Skip specific apps by Bundle ID
+- **Copy Diagnostics** — Copy system and permission info for troubleshooting
 
 ## How It Works
 
 1. A `CGEventTap` (session-level) intercepts global left-click events
 2. A fast geometric check determines if the click is in the Dock area
 3. Accessibility API identifies which app icon was clicked
-4. Window list and thumbnails are captured via `CGWindowListCreateImage`
+4. Window list and thumbnails are captured via ScreenCaptureKit (`SCScreenshotManager`)
 5. A floating preview panel is displayed with keyboard navigation and snap controls
 6. Selecting a window activates it via the SkyLight private API (same approach as AltTab)
 7. A background watchdog monitors accessibility permission to prevent system freezes if revoked
@@ -115,7 +124,7 @@ DockPeek/
 │   └── AccessibilityManager.swift # Permission check & prompt
 ├── UI/
 │   ├── PreviewPanel.swift         # Floating NSPanel (non-activating)
-│   ├── PreviewContentView.swift   # SwiftUI thumbnail grid with close button
+│   ├── PreviewContentView.swift   # SwiftUI thumbnail grid with close/snap buttons
 │   ├── HighlightOverlay.swift     # Live preview overlay at window position
 │   ├── SettingsView.swift         # Settings window with tabs (General/Appearance/About)
 │   └── OnboardingView.swift       # First-launch permission guide
@@ -124,6 +133,8 @@ DockPeek/
 │   └── DockApp.swift              # Dock icon → app mapping
 └── Utilities/
     ├── L10n.swift                 # Korean/English localization strings
+    ├── UpdateChecker.swift        # Auto-update: check, download, install, rollback
+    ├── DiagnosticChecker.swift    # System diagnostics + DockRectDetector
     └── DebugLog.swift             # Debug-only logging
 ```
 
@@ -140,7 +151,6 @@ make clean      # Remove build artifacts
 ## Known Limitations
 
 - macOS has no official Dock click API — DockPeek relies on Accessibility hit-testing, which may change across OS versions
-- `CGWindowListCreateImage` is deprecated since macOS 14 but still works; future versions may require ScreenCaptureKit migration
 - Auto-hide Dock can cause timing edge cases where the hit-test misses
 
 ## License
