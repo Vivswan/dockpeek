@@ -1,17 +1,17 @@
 import AppKit
 
-/// Shows a translucent preview overlay at a window's actual screen position,
-/// displaying the real window content so the user can identify it before clicking.
+/// Shows the window's actual content at its screen position so the user
+/// can identify which window they're about to select.
 final class HighlightOverlay {
 
     private var overlayWindow: NSWindow?
-    private var currentWindowID: CGWindowID?
+    private(set) var currentID: CGWindowID?
     private var isHiding = false
     private var overlayGeneration = 0
 
-    func show(for windowInfo: WindowInfo, cachedImage: NSImage? = nil) {
+    func show(for windowInfo: WindowInfo) {
         // Skip if already showing for this window
-        if currentWindowID == windowInfo.id { return }
+        if currentID == windowInfo.id { return }
 
         overlayGeneration &+= 1
 
@@ -23,13 +23,12 @@ final class HighlightOverlay {
             isHiding = false
         }
 
-        currentWindowID = windowInfo.id
+        currentID = windowInfo.id
 
         let primaryH = NSScreen.screens.first?.frame.height ?? 0
         guard screenForCGRect(windowInfo.bounds, primaryH: primaryH) != nil else { return }
 
         // Convert CG bounds (top-left origin) to Cocoa (bottom-left origin)
-        // Must use primary screen height — CG origin is at top-left of primary screen
         let cocoaRect = NSRect(
             x: windowInfo.bounds.origin.x,
             y: primaryH - windowInfo.bounds.origin.y - windowInfo.bounds.height,
@@ -37,75 +36,88 @@ final class HighlightOverlay {
             height: windowInfo.bounds.height
         )
 
-        // Reuse existing window or create one
-        let window: NSWindow
-        if let existing = overlayWindow {
-            existing.setFrame(cocoaRect, display: false)
-            window = existing
-        } else {
-            window = NSWindow(
-                contentRect: cocoaRect,
-                styleMask: .borderless,
-                backing: .buffered,
-                defer: false
-            )
-            window.isOpaque = false
-            window.backgroundColor = .clear
-            window.level = .popUpMenu - 1
-            window.ignoresMouseEvents = true
-            window.hasShadow = true
-            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        }
-
-        let container = NSView(frame: NSRect(origin: .zero, size: cocoaRect.size))
-        container.wantsLayer = true
-        container.layer?.cornerRadius = 8
-        container.layer?.masksToBounds = true
-        container.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.8).cgColor
-        container.layer?.borderWidth = 3
-
-        // Use cached image if available, skip re-capture entirely
-        if let cachedImage {
-            let imageView = NSImageView(frame: NSRect(origin: .zero, size: cocoaRect.size))
-            imageView.image = cachedImage
-            imageView.imageScaling = .scaleProportionallyUpOrDown
-            imageView.autoresizingMask = [.width, .height]
-            container.addSubview(imageView)
-        } else {
-            // Fallback: tinted background (no CGWindowListCreateImage)
-            container.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor
-        }
-
+        let window = makeOrReuseWindow(cocoaRect)
+        let container = makeContainer(size: cocoaRect.size, image: nil)
         window.contentView = container
 
+        window.setFrame(cocoaRect, display: true)
         window.alphaValue = 0
         window.orderFrontRegardless()
 
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.12
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            window.animator().alphaValue = 0.85
+            window.animator().alphaValue = 1.0
         }
 
         overlayWindow = window
     }
 
+    /// Update the overlay with a captured image (called after async capture completes).
+    func updateImage(_ image: NSImage) {
+        guard let window = overlayWindow else { return }
+        let size = window.frame.size
+        window.contentView = makeContainer(size: size, image: image)
+    }
+
     func hide() {
         guard let window = overlayWindow, !isHiding else { return }
         isHiding = true
-        currentWindowID = nil
+        currentID = nil
         let gen = overlayGeneration
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.1
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             window.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
-            // Skip cleanup if show() was called during the animation
             guard let self, self.overlayGeneration == gen else { return }
             window.orderOut(nil)
             self.overlayWindow = nil
             self.isHiding = false
         })
+    }
+
+    // MARK: - Private
+
+    private func makeOrReuseWindow(_ frame: NSRect) -> NSWindow {
+        if let existing = overlayWindow {
+            existing.setFrame(frame, display: false)
+            return existing
+        }
+        let window = NSWindow(
+            contentRect: frame,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.level = .popUpMenu - 1
+        window.ignoresMouseEvents = true
+        window.hasShadow = true
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        return window
+    }
+
+    private func makeContainer(size: NSSize, image: NSImage?) -> NSView {
+        let container = NSView(frame: NSRect(origin: .zero, size: size))
+        container.wantsLayer = true
+        container.layer?.cornerRadius = 8
+        container.layer?.masksToBounds = true
+        container.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.8).cgColor
+        container.layer?.borderWidth = 3
+
+        if let image {
+            let imgLayer = CALayer()
+            imgLayer.frame = NSRect(origin: .zero, size: size)
+            imgLayer.contents = image
+            imgLayer.contentsGravity = .resizeAspect
+            container.layer?.addSublayer(imgLayer)
+        } else {
+            container.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08).cgColor
+        }
+
+        return container
     }
 
     private func screenForCGRect(_ rect: CGRect, primaryH: CGFloat? = nil) -> NSScreen? {

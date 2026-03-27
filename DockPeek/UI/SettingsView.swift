@@ -1,206 +1,67 @@
 import SwiftUI
 import ServiceManagement
 
-struct SettingsView: View {
+// MARK: - Settings Pane Views
+
+struct GeneralSettingsPane: View {
     @ObservedObject var appState: AppState
     @ObservedObject var updateChecker: UpdateChecker = .shared
     @State private var langRefresh = UUID()
+    @State private var isCheckingUpdate = false
+
+    private static let relativeDateFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .short
+        return f
+    }()
 
     var body: some View {
-        TabView {
-            generalTab
-                .tabItem { Label(L10n.general, systemImage: "gear") }
-            behaviorTab
-                .tabItem { Label(L10n.behavior, systemImage: "cursorarrow.click.2") }
-            appearanceTab
-                .tabItem { Label(L10n.appearance, systemImage: "paintbrush") }
-            updateTab
-                .tabItem {
-                    if updateChecker.updateAvailable {
-                        Label(L10n.update, systemImage: "exclamationmark.circle")
-                    } else {
-                        Label(L10n.update, systemImage: "arrow.triangle.2.circlepath")
+        Settings.Container(contentWidth: 450) {
+            Settings.Section(title: "", bottomDivider: true) {
+                Toggle(L10n.enableDockPeek, isOn: $appState.isEnabled)
+                Toggle(L10n.launchAtLogin, isOn: $appState.launchAtLogin)
+                    .onChange(of: appState.launchAtLogin) { _, newValue in
+                        do {
+                            if newValue { try SMAppService.mainApp.register() }
+                            else { try SMAppService.mainApp.unregister() }
+                        } catch { dpLog("Login item: \(error)") }
+                    }
+            }
+
+            Settings.Section(title: "", bottomDivider: true) {
+                Toggle(L10n.autoUpdateToggle, isOn: $appState.autoUpdateEnabled)
+                Button(action: performUpdateCheck) {
+                    HStack(spacing: 6) {
+                        if isCheckingUpdate { ProgressView().controlSize(.small) }
+                        Text(L10n.checkNow)
                     }
                 }
-            aboutTab
-                .tabItem { Label(L10n.about, systemImage: "info.circle") }
-        }
-        .padding(20)
-        .frame(width: 480, height: 560)
-        .id(langRefresh)
-    }
-
-    // MARK: - General
-
-    private var generalTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Toggle(L10n.enableDockPeek, isOn: $appState.isEnabled)
-            Toggle(L10n.launchAtLogin, isOn: $appState.launchAtLogin)
-                .onChange(of: appState.launchAtLogin) { _, newValue in
-                    do {
-                        if newValue {
-                            try SMAppService.mainApp.register()
-                        } else {
-                            try SMAppService.mainApp.unregister()
-                        }
-                    } catch {
-                        dpLog("Login item registration failed: \(error)")
-                    }
+                .disabled(isCheckingUpdate)
+                if updateChecker.updateAvailable || updateChecker.upgradeState != .idle {
+                    updateAvailableSection
                 }
+            }
 
-            Divider()
-
-            // Language picker
-            HStack {
-                Text(L10n.language)
-                Spacer()
+            Settings.Section(label: { Text(L10n.language) }) {
                 Picker("", selection: $appState.language) {
                     ForEach(Language.allCases, id: \.rawValue) { lang in
                         Text(lang.displayName).tag(lang.rawValue)
                     }
                 }
                 .pickerStyle(.segmented)
+                .labelsHidden()
                 .frame(width: 180)
-                .onChange(of: appState.language) { _, _ in
-                    langRefresh = UUID()
-                }
+                .onChange(of: appState.language) { _, _ in langRefresh = UUID() }
             }
 
-            Divider()
-
-            // Permissions
-            permissionStatus
-
-            Spacer()
-        }
-        .padding(.top, 8)
-    }
-
-    // MARK: - Behavior
-
-    private var behaviorTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Toggle(L10n.forceNewWindowsToPrimary, isOn: $appState.forceNewWindowsToPrimary)
-
-            Divider()
-
-            Toggle(L10n.previewOnHover, isOn: $appState.previewOnHover)
-
-            if appState.previewOnHover {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("\(L10n.hoverDelay): \(String(format: "%.1f", appState.hoverDelay))s")
-                        .font(.caption).foregroundColor(.secondary)
-                    Slider(value: $appState.hoverDelay, in: 0.3...2.0, step: 0.1)
-                }
+            Settings.Section(title: "", bottomDivider: false) {
+                permissionStatus
             }
-
-            Divider()
-
-            // Excluded apps
-            exclusionList
-
-            Spacer()
         }
-        .padding(.top, 8)
-    }
-
-    // MARK: - Appearance
-
-    private var appearanceTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("\(L10n.thumbnailSize): \(Int(appState.thumbnailSize))px")
-                    .font(.caption).foregroundColor(.secondary)
-                Slider(value: $appState.thumbnailSize, in: 120...360, step: 20)
-            }
-
-            Toggle(L10n.showWindowTitles, isOn: $appState.showWindowTitles)
-            Toggle(L10n.livePreviewOnHover, isOn: $appState.livePreviewOnHover)
-
-            Spacer()
-        }
-        .padding(.top, 8)
+        .id(langRefresh)
     }
 
     // MARK: - Update
-
-    @State private var isCheckingUpdate = false
-
-    private var updateTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Toggle(L10n.autoUpdateToggle, isOn: $appState.autoUpdateEnabled)
-
-            if appState.autoUpdateEnabled {
-                HStack {
-                    Text(L10n.updateInterval)
-                    Spacer()
-                    Picker("", selection: $appState.updateCheckInterval) {
-                        Text(L10n.daily).tag("daily")
-                        Text(L10n.weekly).tag("weekly")
-                        Text(L10n.manual).tag("manual")
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 220)
-                }
-            }
-
-            Divider()
-
-            // Current version
-            HStack {
-                Text(L10n.currentVersion)
-                    .foregroundColor(.secondary)
-                Spacer()
-                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")
-            }
-
-            // Last checked
-            HStack {
-                Text(L10n.lastChecked)
-                    .foregroundColor(.secondary)
-                Spacer()
-                Text(lastCheckedText)
-            }
-
-            Divider()
-
-            // Check now button
-            HStack {
-                Button(action: performUpdateCheck) {
-                    HStack(spacing: 6) {
-                        if isCheckingUpdate {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                        Text(L10n.checkNow)
-                    }
-                }
-                .disabled(isCheckingUpdate || {
-                    if case .downloading = updateChecker.upgradeState { return true }
-                    return false
-                }())
-                Spacer()
-            }
-
-            // Update available section
-            if updateChecker.updateAvailable || updateChecker.upgradeState != .idle {
-                Divider()
-                updateAvailableSection
-            }
-
-            Spacer()
-        }
-        .padding(.top, 8)
-    }
-
-    private var lastCheckedText: String {
-        guard let date = updateChecker.lastCheckDate else {
-            return L10n.never
-        }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return formatter.localizedString(for: date, relativeTo: Date())
-    }
 
     private func performUpdateCheck() {
         isCheckingUpdate = true
@@ -210,73 +71,54 @@ struct SettingsView: View {
     }
 
     private var updateAvailableSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             if updateChecker.updateAvailable {
                 Text(String(format: L10n.newVersionAvailable, updateChecker.latestVersion))
-                    .font(.headline)
-
+                    .font(.callout.bold())
                 if !updateChecker.releaseBody.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(L10n.releaseNotes)
-                            .font(.caption).foregroundColor(.secondary)
-                        ScrollView {
-                            Text(.init(updateChecker.releaseBody))
-                                .font(.caption)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .textSelection(.enabled)
-                        }
-                        .frame(maxHeight: 120)
-                        .background(Color(nsColor: .controlBackgroundColor))
-                        .cornerRadius(6)
+                    ScrollView {
+                        Text(.init(updateChecker.releaseBody))
+                            .font(.caption)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
                     }
+                    .frame(maxHeight: 80)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(6)
                 }
             }
 
-            // Upgrade state UI
             switch updateChecker.upgradeState {
             case .idle:
                 if updateChecker.updateAvailable {
-                    HStack {
-                        Button(L10n.updateNow) {
-                            updateChecker.downloadAndInstall()
-                        }
-                        .controlSize(.large)
+                    HStack(spacing: 8) {
+                        Button(L10n.updateNow) { updateChecker.downloadAndInstall() }
                         Button(L10n.download) {
                             if let url = URL(string: updateChecker.releaseURL) {
                                 NSWorkspace.shared.open(url)
                             }
                         }
-                        .controlSize(.large)
                     }
                 }
             case .downloading(let progress):
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     ProgressView(value: progress)
-                    Text(L10n.upgrading)
-                        .font(.caption).foregroundColor(.secondary)
+                    Text(L10n.upgrading).font(.caption).foregroundColor(.secondary)
                 }
             case .completed:
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
                     Text(L10n.upgradeComplete)
                     Spacer()
-                    Button(L10n.restart) {
-                        updateChecker.relaunchApp()
-                    }
-                    .controlSize(.large)
+                    Button(L10n.restart) { updateChecker.relaunchApp() }
                 }
-            case .failed(let message):
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.red)
+            case .failed(let msg):
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "xmark.circle.fill").foregroundColor(.red)
                         Text(L10n.upgradeFailed)
                     }
-                    Text(message)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(3)
+                    Text(msg).font(.caption).foregroundColor(.secondary).lineLimit(2)
                     Button(L10n.retry) {
                         updateChecker.resetUpgradeState()
                         updateChecker.downloadAndInstall()
@@ -286,81 +128,16 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - About
-
-    private var aboutTab: some View {
-        VStack(spacing: 16) {
-            Spacer()
-
-            // App icon + name + version
-            VStack(spacing: 8) {
-                Image(systemName: "dock.rectangle")
-                    .font(.system(size: 48))
-                    .foregroundColor(.accentColor)
-                Text("DockPeek")
-                    .font(.title2.bold())
-                Text("\(L10n.version) \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Divider()
-
-            // Buy me a coffee
-            VStack(spacing: 8) {
-                Text(L10n.buyMeACoffeeDesc)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                Button(action: {
-                    if let url = URL(string: "https://buymeacoffee.com/zerry") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }) {
-                    HStack {
-                        Image(systemName: "cup.and.saucer.fill")
-                        Text(L10n.buyMeACoffee)
-                    }
-                }
-                .controlSize(.large)
-            }
-
-            // GitHub link
-            Button(action: {
-                if let url = URL(string: "https://github.com/ongjin/dockpeek") {
-                    NSWorkspace.shared.open(url)
-                }
-            }) {
-                HStack {
-                    Image(systemName: "link")
-                    Text(L10n.gitHub)
-                }
-            }
-            .buttonStyle(.link)
-
-            Spacer()
-
-            // Quit button
-            Button(L10n.quit) {
-                NSApplication.shared.terminate(nil)
-            }
-            .foregroundColor(.red)
-        }
-        .padding(.top, 8)
-    }
-
-    // MARK: - Shared Components
+    // MARK: - Permissions
 
     @State private var screenRecordingOK = DiagnosticChecker.isScreenRecordingEffective
     @State private var diagnosticsCopied = false
 
     private var permissionStatus: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(L10n.permissions)
-                .font(.caption).foregroundColor(.secondary)
+            Text(L10n.permissions).font(.caption).foregroundColor(.secondary)
 
-            // Accessibility
-            HStack {
+            HStack(spacing: 6) {
                 Circle()
                     .fill(AccessibilityManager.shared.isAccessibilityGranted ? Color.green : Color.red)
                     .frame(width: 8, height: 8)
@@ -373,8 +150,7 @@ struct SettingsView: View {
                 }
             }
 
-            // Screen Recording
-            HStack {
+            HStack(spacing: 6) {
                 Circle()
                     .fill(screenRecordingOK ? Color.green : Color.red)
                     .frame(width: 8, height: 8)
@@ -384,26 +160,69 @@ struct SettingsView: View {
             }
             .onAppear { screenRecordingOK = DiagnosticChecker.isScreenRecordingEffective }
 
-            // Diagnostics
-            HStack {
-                Button(action: {
-                    let report = DiagnosticChecker.run()
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(report.text, forType: .string)
-                    diagnosticsCopied = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { diagnosticsCopied = false }
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "doc.on.doc")
-                        Text(diagnosticsCopied ? L10n.diagnosticsCopied : L10n.copyDiagnostics)
-                    }
+            Button(action: {
+                let report = DiagnosticChecker.run()
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(report.text, forType: .string)
+                diagnosticsCopied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { diagnosticsCopied = false }
+            }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "doc.on.doc")
+                    Text(diagnosticsCopied ? L10n.diagnosticsCopied : L10n.copyDiagnostics)
                 }
-                .font(.caption)
+            }
+            .font(.caption)
+        }
+    }
+}
+
+// MARK: - Appearance Pane
+
+struct AppearanceSettingsPane: View {
+    @ObservedObject var appState: AppState
+    @State private var newExcludedID = ""
+
+    var body: some View {
+        Settings.Container(contentWidth: 450) {
+            // Preview on hover + live overlay + delay slider
+            Settings.Section(title: "", bottomDivider: false) {
+                Toggle(L10n.previewOnHover, isOn: $appState.previewOnHover)
+                Toggle(L10n.livePreviewOnHover, isOn: $appState.livePreviewOnHover)
+            }
+
+            Settings.Section(bottomDivider: true, label: { Text(L10n.hoverDelay) }) {
+                HStack {
+                    Slider(value: $appState.hoverDelay, in: 0.05...2.0, step: 0.05)
+                        .frame(width: 200)
+                    Text("\(Int(appState.hoverDelay * 1000))ms")
+                        .font(.caption).foregroundColor(.secondary)
+                        .frame(width: 45, alignment: .trailing)
+                }
+            }
+
+            // Window display options + thumbnail size
+            Settings.Section(title: "", bottomDivider: false) {
+                Toggle(L10n.showWindowTitles, isOn: $appState.showWindowTitles)
+                Toggle(L10n.forceNewWindowsToPrimary, isOn: $appState.forceNewWindowsToPrimary)
+            }
+
+            Settings.Section(bottomDivider: true, label: { Text(L10n.thumbnailSize) }) {
+                HStack {
+                    Slider(value: $appState.thumbnailSize, in: 120...360, step: 20)
+                        .frame(width: 200)
+                    Text("\(Int(appState.thumbnailSize))px")
+                        .font(.caption).foregroundColor(.secondary)
+                        .frame(width: 40, alignment: .trailing)
+                }
+            }
+
+            // Excluded apps
+            Settings.Section(title: "", bottomDivider: false) {
+                exclusionList
             }
         }
     }
-
-    @State private var newExcludedID = ""
 
     private var exclusionList: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -438,5 +257,58 @@ struct SettingsView: View {
                 .disabled(newExcludedID.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
+    }
+}
+
+// MARK: - About Pane
+
+struct AboutSettingsPane: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            Spacer()
+
+            VStack(spacing: 8) {
+                Image(systemName: "dock.rectangle")
+                    .font(.system(size: 48))
+                    .foregroundColor(.accentColor)
+                Text("DockPeek").font(.title2.bold())
+                Text("\(L10n.version) \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+
+            Divider().padding(.horizontal, 40)
+
+            VStack(spacing: 8) {
+                Text(L10n.buyMeACoffeeDesc)
+                    .font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center)
+                Button(action: {
+                    if let url = URL(string: "https://buymeacoffee.com/zerry") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "cup.and.saucer.fill")
+                        Text(L10n.buyMeACoffee)
+                    }
+                }
+                .controlSize(.large)
+            }
+
+            Button(action: {
+                if let url = URL(string: "https://github.com/ongjin/dockpeek") {
+                    NSWorkspace.shared.open(url)
+                }
+            }) {
+                HStack { Image(systemName: "link"); Text(L10n.gitHub) }
+            }
+            .buttonStyle(.link)
+
+            Spacer()
+
+            Button(L10n.quit) { NSApplication.shared.terminate(nil) }
+                .foregroundColor(.red)
+                .padding(.bottom, 8)
+        }
+        .frame(minWidth: 400, minHeight: 300)
     }
 }

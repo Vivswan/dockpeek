@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
 
     private var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
+    private var settingsWindowController: SettingsWindowController?
     private let appState = AppState()
     private let eventTapManager = EventTapManager()
     private let dockInspector = DockAXInspector()
@@ -28,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
     fileprivate var previewIsVisible = false {
         didSet { windowManager.isPreviewVisible = previewIsVisible }
     }
+    private var previewGeneration: UInt = 0
     private var cmdCommaMonitor: Any?
     private var hoverTimer: DispatchWorkItem?
     private var hoverDismissTimer: DispatchWorkItem?
@@ -170,35 +172,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
     // MARK: - Settings Window
 
     @objc func openSettings() {
-        if let window = settingsWindow, window.isVisible {
-            NSApp.setActivationPolicy(.regular)
-            window.makeKeyAndOrderFront(nil)
-            window.orderFrontRegardless()
-            NSApp.activate()
-            return
-        }
-
-        // Show in Dock while settings window is open
         NSApp.setActivationPolicy(.regular)
 
-        let settingsView = SettingsView(appState: appState)
-        let hostingView = NSHostingView(rootView: settingsView)
-        hostingView.frame = NSRect(x: 0, y: 0, width: 480, height: 560)
+        if settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController(
+                panes: [
+                    Settings.Pane(
+                        identifier: .init("general"),
+                        title: L10n.general,
+                        toolbarIcon: NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)!
+                    ) {
+                        GeneralSettingsPane(appState: self.appState)
+                    },
+                    Settings.Pane(
+                        identifier: .init("appearance"),
+                        title: L10n.appearance,
+                        toolbarIcon: NSImage(systemSymbolName: "paintbrush", accessibilityDescription: nil)!
+                    ) {
+                        AppearanceSettingsPane(appState: self.appState)
+                    },
+                    Settings.Pane(
+                        identifier: .init("about"),
+                        title: L10n.about,
+                        toolbarIcon: NSImage(systemSymbolName: "info.circle", accessibilityDescription: nil)!
+                    ) {
+                        AboutSettingsPane()
+                    },
+                ],
+                animated: true
+            )
+        }
 
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 560),
-            styleMask: [.titled, .closable],
-            backing: .buffered, defer: false
-        )
-        window.title = "DockPeek \(L10n.general)"
-        window.contentView = hostingView
-        window.center()
-        window.isReleasedWhenClosed = false
-        window.delegate = self
-        window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()
+        settingsWindowController?.show()
+        settingsWindowController?.window?.orderFrontRegardless()
+        settingsWindow = settingsWindowController?.window
+        settingsWindow?.delegate = self
         NSApp.activate()
-        settingsWindow = window
     }
 
     // MARK: - Cmd+, Shortcut
@@ -857,43 +866,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
 
     private func showPreviewForWindows(_ windows: [WindowInfo], at point: CGPoint) {
         previewIsVisible = true
+        previewGeneration &+= 1
+        let generation = previewGeneration
         let thumbSize = CGFloat(appState.thumbnailSize)
 
-        // Separate cache hits (synchronous) from cache misses (background)
-        var enriched = windows
-        var missIndices: [Int] = []
-        for i in enriched.indices {
-            if let cached = windowManager.thumbnail(for: enriched[i].id, maxSize: thumbSize) {
-                enriched[i].thumbnail = cached
-            } else {
-                missIndices.append(i)
-            }
-        }
+        // Invalidate only this app's thumbnails so they get fresh captures
+        let allIDs = windows.map { $0.id }
+        windowManager.invalidateThumbnails(for: allIDs)
 
-        // Generate missing thumbnails in background, then update UI on main thread.
-        // CGWindowListCreateImage is the expensive call and is thread-safe.
-        // WindowManager.thumbnail() handles caching, so we call it on main after
-        // the background work primes the system (the OS caches the window bitmap).
-        if !missIndices.isEmpty {
-            let windowIDs = missIndices.map { enriched[$0].id }
-            DispatchQueue.global(qos: .userInitiated).async {
-                // Prime window captures in parallel — the OS caches these bitmaps
-                for wid in windowIDs {
-                    _ = CGWindowListCreateImage(
-                        .null, .optionIncludingWindow, wid,
-                        [.boundsIgnoreFraming, .nominalResolution]
-                    )
-                }
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, self.previewIsVisible else { return }
-                    for i in missIndices {
-                        enriched[i].thumbnail = self.windowManager.thumbnail(
-                            for: enriched[i].id, maxSize: thumbSize
-                        )
-                    }
-                    self.previewPanel.updateThumbnails(enriched)
+        // All will be cache misses now, show panel immediately with placeholders
+        var enriched = windows
+
+        // Capture fresh thumbnails, then update the panel
+        windowManager.captureThumbnails(for: allIDs, maxSize: thumbSize) { [weak self] results in
+            guard let self, self.previewIsVisible, self.previewGeneration == generation else { return }
+            for i in enriched.indices {
+                if let img = results[enriched[i].id] {
+                    enriched[i].thumbnail = img
                 }
             }
+            self.previewPanel.updateThumbnails(enriched)
         }
 
         previewPanel.showPreview(
@@ -932,7 +924,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, EventTapManagerDelegat
             onHoverWindow: { [weak self] (win: WindowInfo?) in
                 guard let self, self.appState.livePreviewOnHover else { return }
                 if let win {
-                    self.highlightOverlay.show(for: win, cachedImage: win.thumbnail)
+                    self.highlightOverlay.show(for: win)
+                    let hoveredID = win.id
+                    self.windowManager.captureOverlayImage(for: win.id, bounds: win.bounds) { [weak self] image in
+                        guard let self, let image else { return }
+                        // Only update if still hovering the same window
+                        guard self.highlightOverlay.currentID == hoveredID else { return }
+                        self.highlightOverlay.updateImage(image)
+                    }
                 } else {
                     self.highlightOverlay.hide()
                 }

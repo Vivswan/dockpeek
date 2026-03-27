@@ -10,29 +10,29 @@ struct OnboardingView: View {
                 .font(.system(size: 48))
                 .foregroundColor(.accentColor)
 
-            Text("DockPeek needs Accessibility access")
+            Text(L10n.onboardingTitle)
                 .font(.headline)
 
-            Text("To detect clicks on Dock icons, DockPeek needs Accessibility permission.")
+            Text(L10n.onboardingBody)
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
 
             VStack(alignment: .leading, spacing: 8) {
-                stepRow(1, "Open System Settings")
-                stepRow(2, "Go to Privacy & Security → Accessibility")
-                stepRow(3, "Enable DockPeek in the list")
+                stepRow(1, L10n.onboardingStep1)
+                stepRow(2, L10n.onboardingStep2)
+                stepRow(3, L10n.onboardingStep3)
             }
             .padding()
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.1)))
 
             HStack(spacing: 12) {
-                Button("Open Settings") {
+                Button(L10n.onboardingOpenSettings) {
                     AccessibilityManager.shared.openAccessibilitySettings()
                 }
                 .buttonStyle(.borderedProminent)
 
-                Button("I've enabled it") {
+                Button(L10n.onboardingConfirm) {
                     isChecking = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         isChecking = false

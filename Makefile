@@ -5,7 +5,8 @@ VERSION     := 1.5.7
 TARGET      := arm64-apple-macos14.0
 SWIFT_FLAGS := -swift-version 5 -target $(TARGET) -parse-as-library \
                -framework AppKit -framework SwiftUI \
-               -framework CoreGraphics -framework ApplicationServices
+               -framework CoreGraphics -framework ApplicationServices \
+               -framework ScreenCaptureKit
 
 SIGN_ID     := DockPeek Development
 INSTALL_APP := /Applications/$(APP_NAME).app
@@ -45,6 +46,8 @@ dev: kill
 	@cp build/Debug/$(APP_NAME) "$(INSTALL_BIN)"
 	@cp DockPeek/Info.plist "$(INSTALL_APP)/Contents/Info.plist"
 	@cp DockPeek/Resources/AppIcon.icns "$(INSTALL_APP)/Contents/Resources/AppIcon.icns"
+	@cp -R DockPeek/Resources/en.lproj "$(INSTALL_APP)/Contents/Resources/"
+	@cp -R DockPeek/Resources/ko.lproj "$(INSTALL_APP)/Contents/Resources/"
 	@codesign --force --sign "$(SIGN_ID)" "$(INSTALL_APP)"
 	@echo "Binary updated. Launching..."
 	@open "$(INSTALL_APP)"
@@ -61,6 +64,8 @@ build:
 	swiftc $(SWIFT_FLAGS) -Onone -g -o build/Debug/$(APP_NAME).app/Contents/MacOS/$(APP_NAME) $(SWIFT_FILES)
 	@cp DockPeek/Info.plist build/Debug/$(APP_NAME).app/Contents/Info.plist
 	@cp DockPeek/Resources/AppIcon.icns build/Debug/$(APP_NAME).app/Contents/Resources/AppIcon.icns
+	@cp -R DockPeek/Resources/en.lproj build/Debug/$(APP_NAME).app/Contents/Resources/
+	@cp -R DockPeek/Resources/ko.lproj build/Debug/$(APP_NAME).app/Contents/Resources/
 	@codesign --force --sign "$(SIGN_ID)" build/Debug/$(APP_NAME).app
 	@echo "Built: build/Debug/$(APP_NAME).app"
 
@@ -71,6 +76,8 @@ release:
 		-o build/Release/$(APP_NAME).app/Contents/MacOS/$(APP_NAME) $(SWIFT_FILES)
 	@cp DockPeek/Info.plist build/Release/$(APP_NAME).app/Contents/Info.plist
 	@cp DockPeek/Resources/AppIcon.icns build/Release/$(APP_NAME).app/Contents/Resources/AppIcon.icns
+	@cp -R DockPeek/Resources/en.lproj build/Release/$(APP_NAME).app/Contents/Resources/
+	@cp -R DockPeek/Resources/ko.lproj build/Release/$(APP_NAME).app/Contents/Resources/
 	@codesign --force --sign "$(SIGN_ID)" build/Release/$(APP_NAME).app
 	@echo "Built: build/Release/$(APP_NAME).app"
 

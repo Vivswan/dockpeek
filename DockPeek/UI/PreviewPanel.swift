@@ -6,11 +6,19 @@ final class PreviewNavState: ObservableObject {
     func reset() { selectedIndex = -1 }
 }
 
+/// Observable data source for the preview panel's window list.
+/// Updating `windows` triggers a SwiftUI diff instead of recreating the
+/// entire hosting view hierarchy (which was the previous behavior).
+final class PreviewWindowsModel: ObservableObject {
+    @Published var windows: [WindowInfo] = []
+}
+
 final class PreviewPanel: NSPanel {
 
     private var localMonitor: Any?
     private var globalMonitor: Any?
     let navState = PreviewNavState()
+    let windowsModel = PreviewWindowsModel()
     private var storedWindows: [WindowInfo] = []
     private var storedOnSelect: ((WindowInfo) -> Void)?
     private var storedOnClose: ((WindowInfo) -> Void)?
@@ -66,8 +74,11 @@ final class PreviewPanel: NSPanel {
         storedShowTitles = showTitles
         navState.reset()
 
+        // Update the observable model — PreviewContentView reads from this
+        windowsModel.windows = windows
+
         let content = PreviewContentView(
-            windows: windows,
+            windowsModel: windowsModel,
             thumbnailSize: thumbnailSize,
             showTitles: showTitles,
             onSelect: onSelect,
@@ -103,29 +114,12 @@ final class PreviewPanel: NSPanel {
         setupDismissMonitors(onDismiss: onDismiss)
     }
 
-    /// Update thumbnails for windows already being displayed (e.g. after background generation)
+    /// Update thumbnails for windows already being displayed (e.g. after background capture).
+    /// Updates the ObservableObject — SwiftUI diffs the change instead of recreating the hierarchy.
     func updateThumbnails(_ windows: [WindowInfo]) {
-        guard isVisible,
-              let onSelect = storedOnSelect,
-              let onClose = storedOnClose,
-              let onSnap = storedOnSnap,
-              let onDismiss = storedOnDismiss,
-              let onHoverWindow = storedOnHoverWindow else { return }
+        guard isVisible else { return }
         storedWindows = windows
-        let content = PreviewContentView(
-            windows: windows,
-            thumbnailSize: storedThumbnailSize,
-            showTitles: storedShowTitles,
-            onSelect: onSelect,
-            onClose: onClose,
-            onSnap: onSnap,
-            onDismiss: onDismiss,
-            onHoverWindow: onHoverWindow,
-            navState: navState
-        )
-        if let hosting = contentView as? NSHostingView<AnyView> {
-            hosting.rootView = AnyView(content)
-        }
+        windowsModel.windows = windows
     }
 
     // MARK: - Dismiss
@@ -163,6 +157,7 @@ final class PreviewPanel: NSPanel {
         storedOnSnap = nil
         storedOnDismiss = nil
         storedOnHoverWindow = nil
+        windowsModel.windows = []
         contentView = nil
     }
 

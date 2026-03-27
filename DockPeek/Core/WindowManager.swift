@@ -1,4 +1,5 @@
 import AppKit
+import ScreenCaptureKit
 
 // Private/deprecated API wrappers loaded at runtime via dlsym
 private let skylight = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY)
@@ -25,7 +26,7 @@ enum SnapPosition { case left, right, fill }
 final class WindowManager {
 
     /// Thumbnail cache: windowID → (image, timestamp)
-    private var thumbnailCache: [CGWindowID: (NSImage, Date)] = [:]
+    private var thumbnailCache: [CGWindowID: (image: NSImage, timestamp: Date)] = [:]
     private let cacheTTL: TimeInterval = 5.0
     private let extendedCacheTTL: TimeInterval = 10.0
     private let maxCacheSize = 30
@@ -33,8 +34,70 @@ final class WindowManager {
     /// Whether preview panel is currently visible — set by AppDelegate to extend cache TTL
     var isPreviewVisible = false
 
-    /// CGWindowListCopyWindowInfo result cache: pid → (result, timestamp)
-    private var windowListCache: [pid_t: ([[String: Any]], Date)] = [:]
+    /// SCWindow lookup cache: windowID → SCWindow (avoids per-window SCShareableContent calls)
+    private var scWindows: [CGWindowID: SCWindow] = [:]
+    private var scWindowsTimestamp: Date = .distantPast
+    private let scWindowsTTL: TimeInterval = 2.0
+
+    /// Lock protecting ALL mutable caches from concurrent access.
+    /// Guards: thumbnailCache, scWindows, scWindowsTimestamp, windowListCache,
+    /// windowListCacheTimestamp, axWindowIDsCache.
+    private let stateLock = NSLock()
+
+    // MARK: - Thread-safe state accessors (synchronous, safe to call from async contexts)
+
+    /// Thread-safe read of the SCWindow map for the given window IDs.
+    private nonisolated func resolveWindows(_ windowIDs: [CGWindowID]) -> [(CGWindowID, SCWindow)] {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return windowIDs.compactMap { wid in
+            guard let scWindow = scWindows[wid] else { return nil }
+            return (wid, scWindow)
+        }
+    }
+
+    /// Thread-safe write of a single thumbnail into the cache.
+    private nonisolated func storeThumbnail(_ image: NSImage, for windowID: CGWindowID) {
+        stateLock.lock()
+        thumbnailCache[windowID] = (image: image, timestamp: Date())
+        stateLock.unlock()
+    }
+
+    /// Invalidate cached thumbnails for specific window IDs so they get re-captured.
+    func invalidateThumbnails(for windowIDs: [CGWindowID]) {
+        stateLock.lock()
+        for wid in windowIDs {
+            thumbnailCache.removeValue(forKey: wid)
+        }
+        stateLock.unlock()
+    }
+
+    /// Thread-safe check whether the SCWindow cache needs refreshing.
+    private nonisolated func scWindowsNeedRefresh() -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return Date().timeIntervalSince(scWindowsTimestamp) > scWindowsTTL
+    }
+
+    /// Thread-safe replacement of the entire SCWindow cache.
+    private nonisolated func replaceSCWindows(_ map: [CGWindowID: SCWindow]) {
+        stateLock.lock()
+        scWindows = map
+        scWindowsTimestamp = Date()
+        stateLock.unlock()
+    }
+
+    /// Force the SCWindow cache to refresh on next access.
+    private nonisolated func invalidateSCWindows() {
+        stateLock.lock()
+        scWindowsTimestamp = .distantPast
+        stateLock.unlock()
+    }
+
+    /// Shared cross-PID CGWindowListCopyWindowInfo cache — one system-wide list
+    /// instead of redundant per-PID copies.
+    private var windowListCache: [[String: Any]] = []
+    private var windowListCacheTimestamp: Date = .distantPast
     private let windowListCacheTTL: TimeInterval = 0.5
 
     /// AX window IDs cache: pid → (ids, timestamp)
@@ -43,25 +106,38 @@ final class WindowManager {
 
     // MARK: - Window Enumeration
 
+    /// Returns the system-wide window list, using a shared cache to avoid
+    /// redundant CGWindowListCopyWindowInfo calls across PIDs.
+    private func cachedWindowList() -> [[String: Any]] {
+        stateLock.lock()
+        let now = Date()
+        if now.timeIntervalSince(windowListCacheTimestamp) < windowListCacheTTL {
+            let cached = windowListCache
+            stateLock.unlock()
+            return cached
+        }
+        stateLock.unlock()
+
+        guard let fetched = CGWindowListCopyWindowInfo(
+            [.optionAll, .excludeDesktopElements], kCGNullWindowID
+        ) as? [[String: Any]] else {
+            dpLog("CGWindowListCopyWindowInfo failed")
+            return []
+        }
+
+        stateLock.lock()
+        windowListCache = fetched
+        windowListCacheTimestamp = now
+        stateLock.unlock()
+
+        return fetched
+    }
+
     /// Enumerate windows for an app. Only returns on-screen (visible) windows by default.
     /// Cross-references CGWindow list with AXUIElement windows to filter out
     /// overlays, helper windows, and other non-standard windows (e.g. Chrome translation bar).
     func windowsForApp(pid: pid_t, includeMinimized: Bool = false) -> [WindowInfo] {
-        let list: [[String: Any]]
-        let now = Date()
-        if let cached = windowListCache[pid],
-           now.timeIntervalSince(cached.1) < windowListCacheTTL {
-            list = cached.0
-        } else {
-            guard let fetched = CGWindowListCopyWindowInfo(
-                [.optionAll, .excludeDesktopElements], kCGNullWindowID
-            ) as? [[String: Any]] else {
-                dpLog("CGWindowListCopyWindowInfo failed")
-                return []
-            }
-            list = fetched
-            windowListCache[pid] = (fetched, now)
-        }
+        let list = cachedWindowList()
 
         var windows: [WindowInfo] = []
 
@@ -116,11 +192,15 @@ final class WindowManager {
     /// Filters out popups, dialogs, floating panels, overlays (e.g. Chrome translation bar).
     /// Results are cached for 1 second to avoid redundant AX IPC calls.
     private func axWindowIDs(for pid: pid_t) -> Set<CGWindowID> {
+        stateLock.lock()
         let now = Date()
         if let cached = axWindowIDsCache[pid],
            now.timeIntervalSince(cached.1) < axWindowIDsCacheTTL {
-            return cached.0
+            let ids = cached.0
+            stateLock.unlock()
+            return ids
         }
+        stateLock.unlock()
 
         guard let getWindow = _axGetWindow else { return [] }
         let axApp = AXUIElementCreateApplication(pid)
@@ -144,58 +224,205 @@ final class WindowManager {
                 ids.insert(wid)
             }
         }
+
+        stateLock.lock()
         axWindowIDsCache[pid] = (ids, now)
+        stateLock.unlock()
         return ids
     }
 
     // MARK: - Thumbnails
 
+    /// Returns a cached thumbnail synchronously, or nil on cache miss.
+    /// This is the fast path — no async work, no capture.
     func thumbnail(for windowID: CGWindowID, maxSize: CGFloat = 200) -> NSImage? {
-        // Use extended TTL while preview panel is open to reduce redundant captures
         let effectiveTTL = isPreviewVisible ? extendedCacheTTL : cacheTTL
 
-        // Check cache
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
         if let cached = thumbnailCache[windowID],
-           Date().timeIntervalSince(cached.1) < effectiveTTL {
-            return cached.0
+           Date().timeIntervalSince(cached.timestamp) < effectiveTTL {
+            return cached.image
         }
 
         // Prune expired entries and enforce size limit
         let now = Date()
         if thumbnailCache.count > maxCacheSize {
-            thumbnailCache = thumbnailCache.filter { now.timeIntervalSince($0.value.1) < effectiveTTL }
-            // Still over limit — remove oldest entries
+            thumbnailCache = thumbnailCache.filter { now.timeIntervalSince($0.value.timestamp) < effectiveTTL }
             if thumbnailCache.count >= maxCacheSize {
-                let sorted = thumbnailCache.sorted { $0.value.1 < $1.value.1 }
+                let sorted = thumbnailCache.sorted { $0.value.timestamp < $1.value.timestamp }
                 for (id, _) in sorted.prefix(thumbnailCache.count - maxCacheSize + 1) {
                     thumbnailCache.removeValue(forKey: id)
                 }
             }
         }
 
-        guard let cgImage = CGWindowListCreateImage(
-            .null, .optionIncludingWindow, windowID,
-            [.boundsIgnoreFraming, .nominalResolution]
-        ) else {
-            dpLog("Thumbnail capture failed for window \(windowID)")
-            return nil
+        return nil
+    }
+
+    /// Captures thumbnails for multiple windows asynchronously via ScreenCaptureKit.
+    /// Calls completion on the main queue with captured images.
+    ///
+    /// Uses a detached Task instead of DispatchSemaphore to avoid deadlock risk
+    /// when bridging between sync and async contexts.
+    func captureThumbnails(
+        for windowIDs: [CGWindowID],
+        maxSize: CGFloat = 200,
+        completion: @escaping ([CGWindowID: NSImage]) -> Void
+    ) {
+        Task.detached { [weak self] in
+            guard let self else {
+                await MainActor.run { completion([:]) }
+                return
+            }
+
+            // Refresh SCWindow lookup table if stale
+            do {
+                try await self.refreshSCWindowsIfNeeded()
+            } catch {
+                dpLog("SCShareableContent refresh failed: \(error)")
+                await MainActor.run { completion([:]) }
+                return
+            }
+
+            // Resolve SCWindow objects for requested window IDs
+            var windowMap = self.resolveWindows(windowIDs)
+
+            // If any windows are missing, force-refresh and retry once
+            if windowMap.count < windowIDs.count {
+                self.invalidateSCWindows()
+                do {
+                    try await self.refreshSCWindowsIfNeeded()
+                } catch {}
+                windowMap = self.resolveWindows(windowIDs)
+            }
+
+            // Capture all windows concurrently
+            var results: [CGWindowID: NSImage] = [:]
+            await withTaskGroup(of: (CGWindowID, NSImage?).self) { group in
+                for (wid, scWindow) in windowMap {
+                    group.addTask {
+                        do {
+                            let image = try await self.captureWindow(scWindow, maxSize: maxSize)
+                            return (wid, image)
+                        } catch {
+                            dpLog("Capture failed for window \(wid): \(error)")
+                            return (wid, nil)
+                        }
+                    }
+                }
+                for await (wid, image) in group {
+                    if let image {
+                        results[wid] = image
+                        self.storeThumbnail(image, for: wid)
+                    }
+                }
+            }
+
+            await MainActor.run { [results] in
+                completion(results)
+            }
+        }
+    }
+
+    /// Refreshes the SCWindow lookup cache if stale.
+    private func refreshSCWindowsIfNeeded() async throws {
+        guard scWindowsNeedRefresh() else { return }
+
+        let content = try await SCShareableContent.excludingDesktopWindows(
+            false, onScreenWindowsOnly: false
+        )
+
+        var map: [CGWindowID: SCWindow] = [:]
+        map.reserveCapacity(content.windows.count)
+        for window in content.windows {
+            map[window.windowID] = window
         }
 
-        // Draw CGImage directly into scaled size — avoids intermediate full-size NSImage
-        let w = CGFloat(cgImage.width), h = CGFloat(cgImage.height)
-        let aspect = w / h
-        let scaled: NSSize = aspect > 1
-            ? NSSize(width: maxSize, height: maxSize / aspect)
-            : NSSize(width: maxSize * aspect, height: maxSize)
+        replaceSCWindows(map)
+    }
 
-        let result = NSImage(size: scaled, flipped: false) { rect in
-            guard let context = NSGraphicsContext.current?.cgContext else { return false }
-            context.draw(cgImage, in: rect)
-            return true
+    /// Captures a single window via SCScreenshotManager and returns a scaled NSImage.
+    private func captureWindow(_ scWindow: SCWindow, maxSize: CGFloat) async throws -> NSImage {
+        let filter = SCContentFilter(desktopIndependentWindow: scWindow)
+
+        let config = SCStreamConfiguration()
+        config.showsCursor = false
+        config.captureResolution = .best
+
+        // Request 2× maxSize pixels so thumbnails are Retina-sharp
+        let scale: CGFloat = 2.0
+        let ww = CGFloat(scWindow.frame.width)
+        let wh = CGFloat(scWindow.frame.height)
+        guard ww > 0, wh > 0 else {
+            throw NSError(domain: "DockPeek", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: "Window has zero size"])
         }
+        let aspect = ww / wh
+        let logicalW: CGFloat
+        let logicalH: CGFloat
+        if aspect > 1 {
+            logicalW = maxSize
+            logicalH = maxSize / aspect
+        } else {
+            logicalW = maxSize * aspect
+            logicalH = maxSize
+        }
+        config.width  = max(1, Int(logicalW * scale))
+        config.height = max(1, Int(logicalH * scale))
 
-        thumbnailCache[windowID] = (result, now)
-        return result
+        let cgImage = try await SCScreenshotManager.captureImage(
+            contentFilter: filter, configuration: config
+        )
+
+        return NSImage(cgImage: cgImage, size: NSSize(width: logicalW, height: logicalH))
+    }
+
+    /// Captures a window at full resolution for the highlight overlay.
+    /// The returned NSImage is sized to match the given bounds so it fills the overlay.
+    func captureOverlayImage(
+        for windowID: CGWindowID,
+        bounds: CGRect,
+        completion: @escaping (NSImage?) -> Void
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+
+            let semaphore = DispatchSemaphore(value: 0)
+            var result: NSImage?
+
+            Task {
+                defer { semaphore.signal() }
+                do {
+                    try await self.refreshSCWindowsIfNeeded()
+                    guard let scWindow = self.resolveWindows([windowID]).first?.1 else { return }
+
+                    let filter = SCContentFilter(desktopIndependentWindow: scWindow)
+                    let config = SCStreamConfiguration()
+                    config.showsCursor = false
+                    config.captureResolution = .best
+                    // Request pixels matching the overlay size at 2× for Retina
+                    config.width  = max(1, Int(bounds.width * 2))
+                    config.height = max(1, Int(bounds.height * 2))
+
+                    let cgImage = try await SCScreenshotManager.captureImage(
+                        contentFilter: filter, configuration: config
+                    )
+
+                    // Size to match CG bounds so it fills the overlay exactly
+                    result = NSImage(cgImage: cgImage, size: NSSize(width: bounds.width, height: bounds.height))
+                } catch {
+                    dpLog("Overlay capture failed for window \(windowID): \(error)")
+                }
+            }
+
+            semaphore.wait()
+            DispatchQueue.main.async { completion(result) }
+        }
     }
 
     // MARK: - AX Window Matching
@@ -268,7 +495,7 @@ final class WindowManager {
                 }
             }
 
-            // Position+size match
+            // Position+size match — safe AXValue cast
             if targetAXWindow == nil, let tb = targetBounds {
                 for axWindow in axWindows {
                     var posRef: AnyObject?
@@ -303,7 +530,7 @@ final class WindowManager {
         GetPSNForPID(pid, &psn)
 
         if let slps = _slpsSetFront {
-            slps(&psn, UInt32(windowID), 0x2)
+            _ = slps(&psn, UInt32(windowID), 0x2)
         } else {
             app?.activate()
         }

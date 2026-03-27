@@ -1,0 +1,87 @@
+/* Korean — DockPeek Localizable.strings */
+
+/* Menu */
+"settings" = "설정...";
+"aboutDockPeek" = "DockPeek에 대하여";
+"quitDockPeek" = "DockPeek 종료";
+
+/* Tabs */
+"general" = "일반";
+"appearance" = "모양";
+"about" = "정보";
+
+/* General */
+"enableDockPeek" = "DockPeek 활성화";
+"launchAtLogin" = "로그인 시 자동 실행";
+"language" = "언어";
+
+/* Behavior */
+"previewOnHover" = "마우스 호버시 프리뷰";
+"hoverDelay" = "호버 지연 시간";
+"livePreviewOnHover" = "마우스 호버 시 실시간 미리보기";
+"forceNewWindowsToPrimary" = "새 창을 메인 디스플레이에 표시";
+"showWindowTitles" = "창 제목 표시";
+"thumbnailSize" = "미리보기 크기";
+
+/* Permissions */
+"permissions" = "권한";
+"accessibilityGranted" = "손쉬운 사용: 허용됨";
+"accessibilityRequired" = "손쉬운 사용: 필요";
+"grantPermission" = "허용";
+"screenRecordingGranted" = "화면 기록: 허용됨";
+"screenRecordingRequired" = "화면 기록: 필요";
+"copyDiagnostics" = "진단 정보 복사";
+"diagnosticsCopied" = "복사됨!";
+
+/* Updates */
+"checkForUpdates" = "업데이트 확인...";
+"updateAvailable" = "업데이트 있음";
+"updateMessage" = "DockPeek %@ 버전을 사용할 수 있습니다. 현재 버전: %@";
+"autoUpdate" = "지금 업데이트";
+"autoUpdateHint" = "\"지금 업데이트\"를 누르면 자동으로 다운로드 후 설치됩니다.";
+"download" = "다운로드";
+"later" = "나중에";
+"brewHint" = "";
+"upToDate" = "최신 버전";
+"upToDateMessage" = "현재 최신 버전의 DockPeek을 사용 중입니다.";
+"autoUpdate_toggle" = "자동으로 업데이트 확인";
+"updateInterval" = "확인 주기";
+"daily" = "매일";
+"weekly" = "매주";
+"manual" = "수동";
+"lastChecked" = "마지막 확인";
+"never" = "확인한 적 없음";
+"checkNow" = "지금 확인";
+"releaseNotes" = "릴리스 노트";
+"newVersionAvailable" = "새 버전 사용 가능: %@";
+"currentVersion" = "현재 버전";
+"updateNow" = "지금 업데이트";
+"upgrading" = "업데이트 다운로드 및 설치 중...";
+"upgradeComplete" = "업데이트 완료!";
+"upgradeFailed" = "업데이트 실패";
+"restart" = "재시작";
+"retry" = "재시도";
+
+/* About */
+"version" = "버전";
+"buyMeACoffee" = "커피 한 잔 사주기";
+"buyMeACoffeeDesc" = "DockPeek이 마음에 드신다면 개발을 응원해 주세요!";
+"gitHub" = "GitHub";
+"quit" = "DockPeek 종료";
+
+/* Excluded Apps */
+"excludedApps" = "제외된 앱";
+"addPlaceholder" = "com.example.app";
+"add" = "추가";
+
+/* Preview */
+"minimized" = "최소화됨";
+
+/* Onboarding */
+"onboardingTitle" = "DockPeek에 손쉬운 사용 권한이 필요합니다";
+"onboardingBody" = "Dock 아이콘 클릭을 감지하려면 손쉬운 사용 권한이 필요합니다.";
+"onboardingStep1" = "시스템 설정 열기";
+"onboardingStep2" = "개인정보 보호 및 보안 → 손쉬운 사용으로 이동";
+"onboardingStep3" = "목록에서 DockPeek 활성화";
+"onboardingOpenSettings" = "설정 열기";
+"onboardingConfirm" = "활성화했습니다";

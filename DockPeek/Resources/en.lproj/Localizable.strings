@@ -1,0 +1,87 @@
+/* English — DockPeek Localizable.strings */
+
+/* Menu */
+"settings" = "Settings...";
+"aboutDockPeek" = "About DockPeek";
+"quitDockPeek" = "Quit DockPeek";
+
+/* Tabs */
+"general" = "General";
+"appearance" = "Appearance";
+"about" = "About";
+
+/* General */
+"enableDockPeek" = "Enable DockPeek";
+"launchAtLogin" = "Launch at login";
+"language" = "Language";
+
+/* Behavior */
+"previewOnHover" = "Preview on mouse hover";
+"hoverDelay" = "Hover delay";
+"livePreviewOnHover" = "Live preview on hover";
+"forceNewWindowsToPrimary" = "Force new windows to primary display";
+"showWindowTitles" = "Show window titles";
+"thumbnailSize" = "Thumbnail size";
+
+/* Permissions */
+"permissions" = "Permissions";
+"accessibilityGranted" = "Accessibility: Granted";
+"accessibilityRequired" = "Accessibility: Required";
+"grantPermission" = "Grant";
+"screenRecordingGranted" = "Screen Recording: Granted";
+"screenRecordingRequired" = "Screen Recording: Required";
+"copyDiagnostics" = "Copy Diagnostics";
+"diagnosticsCopied" = "Copied!";
+
+/* Updates */
+"checkForUpdates" = "Check for Updates...";
+"updateAvailable" = "Update Available";
+"updateMessage" = "DockPeek %@ is available. You are currently on %@.";
+"autoUpdate" = "Update Now";
+"autoUpdateHint" = "Click \"Update Now\" to download and install automatically.";
+"download" = "Download";
+"later" = "Later";
+"brewHint" = "";
+"upToDate" = "Up to Date";
+"upToDateMessage" = "You're running the latest version of DockPeek.";
+"autoUpdate_toggle" = "Check for updates automatically";
+"updateInterval" = "Check interval";
+"daily" = "Daily";
+"weekly" = "Weekly";
+"manual" = "Manual";
+"lastChecked" = "Last checked";
+"never" = "Never";
+"checkNow" = "Check now";
+"releaseNotes" = "Release Notes";
+"newVersionAvailable" = "New version available: %@";
+"currentVersion" = "Current version";
+"updateNow" = "Update Now";
+"upgrading" = "Downloading and installing update...";
+"upgradeComplete" = "Update complete!";
+"upgradeFailed" = "Update failed";
+"restart" = "Restart";
+"retry" = "Retry";
+
+/* About */
+"version" = "Version";
+"buyMeACoffee" = "Buy me a coffee";
+"buyMeACoffeeDesc" = "If you enjoy DockPeek, consider supporting development!";
+"gitHub" = "GitHub";
+"quit" = "Quit DockPeek";
+
+/* Excluded Apps */
+"excludedApps" = "Excluded Apps";
+"addPlaceholder" = "com.example.app";
+"add" = "Add";
+
+/* Preview */
+"minimized" = "Minimized";
+
+/* Onboarding */
+"onboardingTitle" = "DockPeek needs Accessibility access";
+"onboardingBody" = "To detect clicks on Dock icons, DockPeek needs Accessibility permission.";
+"onboardingStep1" = "Open System Settings";
+"onboardingStep2" = "Go to Privacy & Security → Accessibility";
+"onboardingStep3" = "Enable DockPeek in the list";
+"onboardingOpenSettings" = "Open Settings";
+"onboardingConfirm" = "I've enabled it";

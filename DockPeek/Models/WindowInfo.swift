@@ -1,6 +1,6 @@
 import AppKit
 
-struct WindowInfo: Identifiable {
+struct WindowInfo: Identifiable, Equatable {
     let id: CGWindowID
     let title: String
     let bounds: CGRect
@@ -12,5 +12,15 @@ struct WindowInfo: Identifiable {
 
     var displayTitle: String {
         title.isEmpty ? ownerName : title
+    }
+
+    static func == (lhs: WindowInfo, rhs: WindowInfo) -> Bool {
+        lhs.id == rhs.id
+            && lhs.title == rhs.title
+            && lhs.bounds == rhs.bounds
+            && lhs.ownerPID == rhs.ownerPID
+            && lhs.isOnScreen == rhs.isOnScreen
+            && lhs.isMinimized == rhs.isMinimized
+            && lhs.thumbnail === rhs.thumbnail
     }
 }

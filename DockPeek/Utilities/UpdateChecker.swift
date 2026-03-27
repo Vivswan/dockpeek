@@ -141,7 +141,7 @@ final class UpdateChecker: ObservableObject {
                 return
             }
 
-            // Verify code signature
+            // Verify code signature (including signer identity)
             guard verifyCodeSignature(of: appBundle) else {
                 try? fm.removeItem(at: tempDir)
                 upgradeState = .failed("Code signature verification failed")
@@ -150,8 +150,8 @@ final class UpdateChecker: ObservableObject {
 
             upgradeState = .downloading(0.85)
 
-            // Replace app: backup old → move new → cleanup
-            let appPath = URL(fileURLWithPath: "/Applications/DockPeek.app")
+            // Replace app: use Bundle.main.bundleURL instead of hardcoded path
+            let appPath = Bundle.main.bundleURL
             let backupDir = fm.temporaryDirectory.appendingPathComponent("DockPeek-backup-\(UUID().uuidString)")
 
             var hasBackup = false
@@ -181,27 +181,83 @@ final class UpdateChecker: ObservableObject {
         }
     }
 
+    /// Verify code signature AND signer identity.
+    /// Uses `--verify --deep --strict` to validate the signature structure,
+    /// then reads the signing team identifier to ensure it matches the
+    /// currently running app's team (prevents update hijacking).
     private func verifyCodeSignature(of appURL: URL) -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-        process.arguments = ["--verify", "--deep", "--strict", appURL.path]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        // Step 1: Structural signature verification
+        let verify = Process()
+        verify.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        verify.arguments = ["--verify", "--deep", "--strict", appURL.path]
+        verify.standardOutput = FileHandle.nullDevice
+        verify.standardError = FileHandle.nullDevice
         do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0
+            try verify.run()
+            verify.waitUntilExit()
+            guard verify.terminationStatus == 0 else { return false }
         } catch {
             return false
         }
+
+        // Step 2: Verify the signer identity matches the running app
+        guard let expectedTeamID = teamIdentifier(for: Bundle.main.bundleURL) else {
+            // If we can't determine our own team ID, fall back to structural check only
+            dpLog("Could not determine running app's team identifier")
+            return true
+        }
+
+        guard let updateTeamID = teamIdentifier(for: appURL) else {
+            dpLog("Could not determine update's team identifier")
+            return false
+        }
+
+        if expectedTeamID != updateTeamID {
+            dpLog("Team ID mismatch: expected \(expectedTeamID), got \(updateTeamID)")
+            return false
+        }
+
+        return true
+    }
+
+    /// Extract the TeamIdentifier from a signed app bundle using `codesign -dvvv`.
+    private func teamIdentifier(for appURL: URL) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        process.arguments = ["-dvvv", appURL.path]
+        // codesign writes signing info to stderr
+        let pipe = Pipe()
+        process.standardError = pipe
+        process.standardOutput = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let output = String(data: data, encoding: .utf8) else { return nil }
+
+        // Parse "TeamIdentifier=XXXXXXXXXX" from the output
+        for line in output.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("TeamIdentifier=") {
+                let teamID = String(trimmed.dropFirst("TeamIdentifier=".count))
+                // "not set" means ad-hoc signed
+                return teamID == "not set" ? nil : teamID
+            }
+        }
+        return nil
     }
 
     // MARK: - Relaunch
 
     func relaunchApp() {
+        let appPath = Bundle.main.bundleURL.path
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/sh")
-        task.arguments = ["-c", "sleep 0.5 && open /Applications/DockPeek.app"]
+        task.arguments = ["-c", "sleep 0.5 && open \"\(appPath)\""]
         task.standardOutput = FileHandle.nullDevice
         task.standardError = FileHandle.nullDevice
         try? task.run()

@@ -36,8 +36,8 @@ enum DiagnosticChecker {
         let orientation = dockDefaults?.string(forKey: "orientation") ?? "bottom"
         lines.append("Dock: orientation=\(orientation) autohide=\(autoHide)")
 
-        // Dock area detection
-        let dockRect = detectDockRect(autoHide: autoHide, orientation: orientation)
+        // Dock area detection — use shared helper
+        let dockRect = DockRectDetector.detectDockRect(autoHide: autoHide, orientation: orientation)
         if dockRect != .zero {
             lines.append("Dock Area: \(Int(dockRect.width))x\(Int(dockRect.height)) at (\(Int(dockRect.origin.x)),\(Int(dockRect.origin.y)))")
         } else {
@@ -124,7 +124,30 @@ enum DiagnosticChecker {
         return true
     }
 
-    private static func detectDockRect(autoHide: Bool, orientation: String) -> CGRect {
+    private static func testDockAXAccess() -> String {
+        guard let dock = NSRunningApplication.runningApplications(
+            withBundleIdentifier: "com.apple.dock"
+        ).first else {
+            return "FAILED (Dock not found)"
+        }
+        let dockAX = AXUIElementCreateApplication(dock.processIdentifier)
+        var childrenRef: AnyObject?
+        let result = AXUIElementCopyAttributeValue(dockAX, kAXChildrenAttribute as CFString, &childrenRef)
+        if result == .success, let children = childrenRef as? [AXUIElement] {
+            return "OK (\(children.count) children)"
+        } else {
+            return "FAILED (error: \(result.rawValue))"
+        }
+    }
+}
+
+// MARK: - Shared Dock Rect Detection
+
+/// Shared dock rect detection logic used by both AppDelegate and DiagnosticChecker.
+/// Eliminates the duplicated code that previously existed in both locations.
+enum DockRectDetector {
+    /// Detect the Dock's screen region in CG coordinates (top-left origin).
+    static func detectDockRect(autoHide: Bool, orientation: String) -> CGRect {
         guard let primary = NSScreen.screens.first else { return .zero }
         let pH = primary.frame.height
         var rect = CGRect.zero
@@ -147,6 +170,7 @@ enum DiagnosticChecker {
                 dockZone = CGRect(x: vis.maxX, y: cgTop, width: rightGap, height: full.height)
             }
 
+            // Auto-hide Dock: no visible gap, create detection zone at screen edge
             if dockZone == .zero, autoHide {
                 let dockSize: CGFloat = 100
                 switch orientation {
@@ -156,7 +180,7 @@ enum DiagnosticChecker {
                 case "right":
                     let cgTop = pH - full.maxY
                     dockZone = CGRect(x: full.maxX - dockSize, y: cgTop, width: dockSize, height: full.height)
-                default:
+                default: // "bottom"
                     dockZone = CGRect(x: full.minX, y: pH - full.minY - dockSize, width: full.width, height: dockSize)
                 }
             }
@@ -166,21 +190,5 @@ enum DiagnosticChecker {
             }
         }
         return rect
-    }
-
-    private static func testDockAXAccess() -> String {
-        guard let dock = NSRunningApplication.runningApplications(
-            withBundleIdentifier: "com.apple.dock"
-        ).first else {
-            return "FAILED (Dock not found)"
-        }
-        let dockAX = AXUIElementCreateApplication(dock.processIdentifier)
-        var childrenRef: AnyObject?
-        let result = AXUIElementCopyAttributeValue(dockAX, kAXChildrenAttribute as CFString, &childrenRef)
-        if result == .success, let children = childrenRef as? [AXUIElement] {
-            return "OK (\(children.count) children)"
-        } else {
-            return "FAILED (error: \(result.rawValue))"
-        }
     }
 }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PreviewContentView: View {
-    let windows: [WindowInfo]
+    @ObservedObject var windowsModel: PreviewWindowsModel
     let thumbnailSize: CGFloat
     let showTitles: Bool
     let onSelect: (WindowInfo) -> Void
@@ -16,13 +16,13 @@ struct PreviewContentView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ForEach(Array(windows.enumerated()), id: \.element.id) { index, window in
+            ForEach(Array(windowsModel.windows.enumerated()), id: \.element.id) { index, window in
                 windowCard(window, index: index)
             }
         }
         .onChange(of: navState.selectedIndex) { _, newIndex in
-            if newIndex >= 0, newIndex < windows.count {
-                onHoverWindow(windows[newIndex])
+            if newIndex >= 0, newIndex < windowsModel.windows.count {
+                onHoverWindow(windowsModel.windows[newIndex])
             } else {
                 onHoverWindow(nil)
             }
@@ -47,9 +47,16 @@ struct PreviewContentView: View {
         let keySelected = navState.selectedIndex == index
         let highlighted = hovered || keySelected
 
+        // Dynamic size based on the window's actual aspect ratio
+        let aspect = w.bounds.width > 0 && w.bounds.height > 0
+            ? w.bounds.width / w.bounds.height
+            : 16.0 / 10.0
+        let thumbWidth = aspect > 1 ? thumbnailSize : thumbnailSize * aspect
+        let thumbHeight = aspect > 1 ? thumbnailSize / aspect : thumbnailSize
+
         VStack(spacing: 6) {
             thumbnailView(w)
-                .frame(width: thumbnailSize, height: thumbnailSize * 0.625)
+                .frame(width: thumbWidth, height: thumbHeight)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -102,7 +109,7 @@ struct PreviewContentView: View {
                     .font(.caption)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .frame(width: thumbnailSize)
+                    .frame(width: thumbWidth)
                     .foregroundColor(.primary)
             }
 
