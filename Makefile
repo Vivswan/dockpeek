@@ -121,34 +121,21 @@ clean:
 	rm -rf build DerivedData DockPeek.xcodeproj $(APP_NAME).zip
 
 # --- Tests ---
-# Compiles all production + test sources with -DTESTING and runs via XCTest.
-# Uses Xcode's toolchain and SDK since XCTest requires the full platform SDK
-# (the Command Line Tools SDK doesn't include the Swift XCTest overlay).
-
-XCODE_DEV     := /Applications/Xcode.app/Contents/Developer
-XCODE_SWIFTC  := $(XCODE_DEV)/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc
-MACOS_PLAT    := $(XCODE_DEV)/Platforms/MacOSX.platform/Developer
-MACOS_SDK     := $(MACOS_PLAT)/SDKs/MacOSX.sdk
-XCTEST_FW     := $(MACOS_PLAT)/Library/Frameworks
-XCTEST_PFW    := $(MACOS_PLAT)/Library/PrivateFrameworks
-XCTEST_LIB    := $(MACOS_PLAT)/usr/lib
-TEST_SOURCES  := $(shell find DockPeek -name '*.swift' -type f) $(shell find Tests -name '*.swift' -type f)
+# Unit tests run via xcodebuild (requires Xcode.app).
+# UI tests are separate — they launch the app and interact with the real UI.
 
 test:
-	@mkdir -p build/Test
-	@echo "Compiling tests..."
-	@$(XCODE_SWIFTC) $(SWIFT_FLAGS) -DTESTING \
-		-sdk $(MACOS_SDK) \
-		-F $(XCTEST_FW) \
-		-F $(XCTEST_PFW) \
-		-I $(XCTEST_LIB) \
-		-L $(XCTEST_LIB) \
-		-Xlinker -rpath -Xlinker $(XCTEST_FW) \
-		-Xlinker -rpath -Xlinker $(XCTEST_PFW) \
-		-Xlinker -rpath -Xlinker $(XCTEST_LIB) \
-		-o build/Test/DockPeekTests $(TEST_SOURCES)
-	@echo "Running tests..."
-	@./build/Test/DockPeekTests
+	@echo "Running unit tests..."
+	@xcodebuild -project DockPeek.xcodeproj -scheme DockPeek -configuration Debug \
+		-only-testing:DockPeekTests test -quiet 2>&1; \
+	EXIT=$$?; \
+	if [ $$EXIT -eq 0 ]; then echo "✅ All unit tests passed"; \
+	else echo "❌ Unit tests failed"; exit 1; fi
+
+uitest:
+	@echo "Running UI tests (requires Accessibility permission)..."
+	@xcodebuild -project DockPeek.xcodeproj -scheme DockPeek -configuration Debug \
+		-only-testing:DockPeekUITests test 2>&1 | tail -20
 
 # --- Code Quality ---
 # Requires: brew install swiftlint swiftformat

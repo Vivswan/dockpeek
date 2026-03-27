@@ -1,0 +1,50 @@
+{
+  "configurations" : [
+    {
+      "id" : "1A2B3C4D-5E6F-7890-ABCD-EF1234567890",
+      "name" : "Default",
+      "options" : {
+        "codeCoverage" : {
+          "targets" : [
+            {
+              "containerPath" : "container:DockPeek.xcodeproj",
+              "identifier" : "DockPeek",
+              "name" : "DockPeek"
+            }
+          ]
+        },
+        "targetForVariableExpansion" : {
+          "containerPath" : "container:DockPeek.xcodeproj",
+          "identifier" : "DockPeek",
+          "name" : "DockPeek"
+        }
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "codeCoverage" : true,
+    "language" : "en",
+    "region" : "US",
+    "testRepetitionMode" : "retryOnFailure",
+    "maximumTestRepetitions" : 2
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:DockPeek.xcodeproj",
+        "identifier" : "DockPeekTests",
+        "name" : "DockPeekTests"
+      }
+    },
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:DockPeek.xcodeproj",
+        "identifier" : "DockPeekUITests",
+        "name" : "DockPeekUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

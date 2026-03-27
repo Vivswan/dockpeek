@@ -5,10 +5,18 @@ options:
     macOS: "14.0"
   createIntermediateGroups: true
   defaultConfig: Release
+  groupSortPosition: top
+
+configs:
+  Debug: debug
+  Release: release
 
 settings:
   base:
-    SWIFT_VERSION: "5.9"
+    SWIFT_VERSION: "5"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    CODE_SIGN_IDENTITY: "DockPeek Development"
+    CODE_SIGN_STYLE: Manual
 
 targets:
   DockPeek:
@@ -21,26 +29,64 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.dockpeek.app
-        MARKETING_VERSION: "1.0.0"
+        MARKETING_VERSION: "1.5.7"
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_FILE: DockPeek/Info.plist
         CODE_SIGN_ENTITLEMENTS: DockPeek/DockPeek.entitlements
         COMBINE_HIDPI_IMAGES: true
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        PRODUCT_NAME: DockPeek
+        GENERATE_INFOPLIST_FILE: false
         LD_RUNPATH_SEARCH_PATHS:
           - $(inherited)
           - "@executable_path/../Frameworks"
+      configs:
+        Debug:
+          SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS:
+            - DEBUG
+        Release:
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
+          SWIFT_COMPILATION_MODE: wholemodule
+    scheme:
+      testTargets:
+        - DockPeekTests
+        - DockPeekUITests
+      testPlans:
+        - path: DockPeek.xctestplan
+          defaultPlan: true
+      gatherCoverageData: true
 
   DockPeekTests:
     type: bundle.unit-test
     platform: macOS
     sources:
+      - path: DockPeek
+        excludes:
+          - "**/.DS_Store"
       - path: Tests
+        excludes:
+          - "**/.DS_Store"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dockpeek.tests
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS:
+          - TESTING
+        GENERATE_INFOPLIST_FILE: true
+        CODE_SIGN_IDENTITY: "DockPeek Development"
+
+  DockPeekUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: UITests
         excludes:
           - "**/.DS_Store"
     dependencies:
       - target: DockPeek
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.dockpeek.tests
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: TESTING
+        PRODUCT_BUNDLE_IDENTIFIER: com.dockpeek.uitests
+        GENERATE_INFOPLIST_FILE: true
+        CODE_SIGN_IDENTITY: "DockPeek Development"
+        TEST_TARGET_NAME: DockPeek
